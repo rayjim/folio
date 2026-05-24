@@ -461,15 +461,21 @@ const FileStore = {
   },
 
   async pickData(){
-    // No mode:'readwrite' here — Chrome silently aborts the picker on file:// when readwrite
-    // is requested upfront. Write permission is obtained lazily in _perm() on first save.
+    // Pick without mode — passing mode:'readwrite' silently aborts on file:// origins.
     const h=await window.showDirectoryPicker();
+    // Immediately request write permission while we are still inside the user-gesture
+    // context of the click handler. Background saves (debounce / interval) cannot show
+    // a permission prompt, so we must prime it here.
+    const perm=await h.requestPermission({mode:'readwrite'});
+    if(perm!=='granted') throw new Error('Write permission not granted for "'+h.name+'"');
     this._dataDir=h;
     try{ await this._put('data',h); }catch(e){ console.warn('FileStore: handle not persisted (file:// limitation)',e); }
     return h;
   },
   async pickAttach(){
     const h=await window.showDirectoryPicker();
+    const perm=await h.requestPermission({mode:'readwrite'});
+    if(perm!=='granted') throw new Error('Write permission not granted for "'+h.name+'"');
     this._attachDir=h;
     try{ await this._put('attach',h); }catch(e){ console.warn('FileStore: handle not persisted',e); }
     return h;
