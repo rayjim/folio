@@ -384,6 +384,9 @@ button{font-family:var(--font-ui);cursor:pointer}
   <div class="ctx-item" data-action="rename">Rename…</div>
   <div class="ctx-item" data-action="add-sub">Add Sub-page</div>
   <div class="ctx-sep"></div>
+  <div class="ctx-item" data-action="indent">Indent →</div>
+  <div class="ctx-item" data-action="unindent">← Unindent</div>
+  <div class="ctx-sep"></div>
   <div class="ctx-item" data-action="move-up">Move Up</div>
   <div class="ctx-item" data-action="move-down">Move Down</div>
   <div class="ctx-sep"></div>
@@ -686,6 +689,24 @@ const Pages = {
     let pg=State.pages.find(p=>p.id===id);
     while(pg?.parentId){if(pg.parentId===ancestorId)return true;pg=State.pages.find(p=>p.id===pg.parentId);}
     return false;
+  },
+  indent(id){
+    const pg=State.page(id); if(!pg||this.getDepth(id)>=MAX_DEPTH) return false;
+    const sibs=State.pages.filter(p=>p.parentId===pg.parentId&&p.notebookId===pg.notebookId).sort((a,b)=>a.order-b.order);
+    const idx=sibs.findIndex(s=>s.id===id); if(idx===0) return false;
+    const prev=sibs[idx-1];
+    this.reparent(id,prev.id,null);
+    Pages.update(prev.id,{collapsed:false,modifiedAt:prev.modifiedAt});
+    return true;
+  },
+  unindent(id){
+    const pg=State.page(id); if(!pg||!pg.parentId) return false;
+    const parent=State.page(pg.parentId);
+    const grandparentId=parent.parentId??null;
+    const parentSibs=State.pages.filter(p=>p.parentId===grandparentId).sort((a,b)=>a.order-b.order);
+    const pi=parentSibs.findIndex(s=>s.id===parent.id);
+    this.reparent(id,grandparentId,parentSibs[pi+1]?.id??null);
+    return true;
   },
   reparent(id,newParentId,insertBeforeId){
     const pg=State.page(id); if(!pg) return;
@@ -1377,6 +1398,10 @@ const CtxMenu = {
     this._target=pg;
     const m=document.getElementById('ctx-menu');
     m.querySelector('[data-action="add-sub"]').style.display=depth>=MAX_DEPTH?'none':'';
+    const sibs=State.pages.filter(p=>p.parentId===pg.parentId&&p.notebookId===pg.notebookId).sort((a,b)=>a.order-b.order);
+    const hasPrevSib=sibs.findIndex(s=>s.id===pg.id)>0;
+    m.querySelector('[data-action="indent"]').style.display=(depth<MAX_DEPTH&&hasPrevSib)?'':'none';
+    m.querySelector('[data-action="unindent"]').style.display=depth>0?'':'none';
     m.style.left=e.clientX+'px'; m.style.top=e.clientY+'px';
     m.classList.add('open');
   },
@@ -1397,6 +1422,8 @@ const CtxMenu = {
       State.activePageId=sub.id; State.flush();
       UI.renderSidebar(); Editor.loadPage(sub.id);
       setTimeout(()=>document.getElementById('page-title-input').select(),40);
+    } else if(action==='indent'){ if(Pages.indent(pg.id)){Editor.saveNow();UI.renderAll();}
+    } else if(action==='unindent'){ if(Pages.unindent(pg.id)){Editor.saveNow();UI.renderAll();}
     } else if(action==='move-up'){ Pages.move(pg.id,'up'); UI.renderSidebar();
     } else if(action==='move-down'){ Pages.move(pg.id,'down'); UI.renderSidebar();
     } else if(action==='delete'){
