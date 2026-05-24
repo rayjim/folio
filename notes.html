@@ -1795,7 +1795,7 @@ document.addEventListener('DOMContentLoaded',async()=>{
 
   window.addEventListener('beforeunload',()=>Editor.saveNow());
 
-  // Auto-save to linked folder every 60 seconds
+  // Safety-net save every 5 minutes (all real changes already save immediately via State.flush)
   setInterval(async()=>{
     if(!FileStore.isLinked()) return;
     Editor.saveNow(); // flush any pending in-editor changes first
@@ -1810,7 +1810,7 @@ document.addEventListener('DOMContentLoaded',async()=>{
         ind.textContent='Saved ✓'; // restore default text
       },2000);
     }
-  },30000);
+  },300000);
 
   // Same-browser tab sync via StorageEvent
   // (StorageEvent fires in OTHER tabs only — no echo)
