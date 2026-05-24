@@ -164,6 +164,47 @@ Tests are written in vanilla JS with no external test framework dependency.
 
 ---
 
+## Running at Windows Startup
+
+### Option A — Direct file (localStorage only, no setup)
+
+Best if you don't need folder sync.
+
+1. Press `Win + R`, type `shell:startup`, press Enter
+2. Right-drag `notes.html` into that folder → **Create shortcut here**
+
+Folio will open in your browser on every login. All data persists in `localStorage`.
+
+---
+
+### Option B — Local server at startup (folder sync enabled)
+
+Best if you want notes written to real files on disk.
+
+**Step 1** — Save the following as `folio-start.ps1` inside your folio folder:
+
+```powershell
+$folio = "$PSScriptRoot"
+Start-Process -FilePath "python" -ArgumentList "-m http.server 8080 --directory `"$folio`"" -WindowStyle Hidden
+Start-Sleep -Seconds 1
+Start-Process "http://localhost:8080/notes.html"
+```
+
+> Requires Python to be installed (`python --version` to check). If unavailable, replace `python` with `node` and the argument with `node -e "require('http').createServer(...)"` or use any static file server.
+
+**Step 2** — Register it in Task Scheduler:
+
+1. Open **Task Scheduler** → **Create Basic Task…**
+2. **Trigger:** At log on
+3. **Action:** Start a program
+   - Program: `powershell.exe`
+   - Arguments: `-WindowStyle Hidden -File "C:\path\to\folio\folio-start.ps1"`
+4. Check **Run with highest privileges** → Finish
+
+Folio will start a background server and open `http://localhost:8080/notes.html` on every login. Folder sync works normally.
+
+---
+
 ## Dependencies (CDN)
 
 | Library | Version | Purpose |
