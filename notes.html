@@ -107,6 +107,7 @@ button{font-family:var(--font-ui);cursor:pointer}
 .tree-row.active{background:var(--bg-active);color:var(--text-pri)}
 .tree-row.dragging{opacity:.35}
 .tree-row[draggable="true"]{cursor:grab}
+.tree-row.drop-target{background:rgba(74,158,255,.15);box-shadow:inset 0 0 0 1px #4a9eff;border-radius:3px}
 .tree-chev{width:14px;font-size:8px;color:var(--text-dim);flex-shrink:0;transition:transform .15s;display:flex;align-items:center;justify-content:center}
 .tree-chev.expanded{transform:rotate(90deg)}
 .tree-chev.empty{visibility:hidden}
@@ -1307,6 +1308,10 @@ const UI = {
   },
 
   _drag:{id:null}, _dropTarget:null,
+  _clearDropUI(){
+    document.getElementById('drop-indicator').style.display='none';
+    document.querySelectorAll('.tree-row.drop-target').forEach(r=>r.classList.remove('drop-target'));
+  },
   _initDragDrop(){
     const tree=document.getElementById('page-tree');
     const ind=document.getElementById('drop-indicator');
@@ -1321,7 +1326,7 @@ const UI = {
 
     tree.addEventListener('dragend',()=>{
       document.querySelectorAll('.tree-row.dragging').forEach(r=>r.classList.remove('dragging'));
-      ind.style.display='none';
+      this._clearDropUI();
       this._drag.id=null; this._dropTarget=null;
     });
 
@@ -1335,53 +1340,56 @@ const UI = {
 
       const rect=row.getBoundingClientRect();
       const treeRect=tree.getBoundingClientRect();
-      const below=e.clientY>rect.top+rect.height/2;
+      const relY=(e.clientY-rect.top)/rect.height;
       const targetDepth=parseInt(row.dataset.depth)||0;
-      const rawDepth=Math.floor((e.clientX-treeRect.left)/16);
-      const maxAllowed=below?Math.min(targetDepth+1,MAX_DEPTH):targetDepth;
-      const snapDepth=Math.max(0,Math.min(rawDepth,maxAllowed));
-      const indLeft=snapDepth*16+8;
 
-      ind.style.setProperty('--di-left',indLeft+'px');
-      ind.style.top=((below?rect.bottom:rect.top)-treeRect.top+tree.scrollTop)+'px';
-      ind.style.left=indLeft+'px';
-      ind.style.right='0';
-      ind.style.display='block';
-      this._dropTarget={targetId,below,snapDepth};
+      // 3 zones: top 30% = before, middle 40% = child, bottom 30% = after
+      let zone;
+      if(relY<0.3) zone='before';
+      else if(relY>0.7) zone='after';
+      else zone='child';
+
+      // Can't nest deeper than MAX_DEPTH
+      if(zone==='child'&&targetDepth>=MAX_DEPTH) zone='after';
+
+      this._clearDropUI();
+      this._dropTarget={targetId,zone};
+
+      if(zone==='child'){
+        row.classList.add('drop-target');
+      } else {
+        const indLeft=(targetDepth*16)+8;
+        ind.style.setProperty('--di-left',indLeft+'px');
+        ind.style.top=((zone==='after'?rect.bottom:rect.top)-treeRect.top+tree.scrollTop)+'px';
+        ind.style.left=indLeft+'px';
+        ind.style.display='block';
+      }
     });
 
     tree.addEventListener('dragleave',e=>{
-      if(!tree.contains(e.relatedTarget)) ind.style.display='none';
+      if(!tree.contains(e.relatedTarget)) this._clearDropUI();
     });
 
     tree.addEventListener('drop',e=>{
       e.preventDefault();
-      ind.style.display='none';
+      this._clearDropUI();
       if(!this._drag.id||!this._dropTarget) return;
-      const {targetId,below,snapDepth}=this._dropTarget;
+      const {targetId,zone}=this._dropTarget;
       this._dropTarget=null;
       const dragId=this._drag.id;
       const targetPg=State.pages.find(p=>p.id===targetId);
-      const targetDepth=Pages.getDepth(targetId);
 
       let newParentId, insertBeforeId;
-      if(below&&snapDepth===targetDepth+1){
-        // first child of target
-        newParentId=targetId; insertBeforeId=null;
+      if(zone==='child'){
+        // nest inside target — append as last child
+        newParentId=targetId;
+        insertBeforeId=null;
+        Pages.update(targetId,{collapsed:false,modifiedAt:targetPg.modifiedAt});
       } else {
-        // climb ancestor chain to reach snapDepth
-        let anchor=targetPg;
-        while(Pages.getDepth(anchor.id)>snapDepth){
-          anchor=State.pages.find(p=>p.id===anchor.parentId);
-        }
-        newParentId=anchor.parentId??null;
-        if(below){
-          const sibs=State.pages.filter(p=>p.parentId===newParentId).sort((a,b)=>a.order-b.order);
-          const ai=sibs.findIndex(s=>s.id===anchor.id);
-          insertBeforeId=sibs[ai+1]?.id??null;
-        } else {
-          insertBeforeId=anchor.id;
-        }
+        newParentId=targetPg.parentId??null;
+        const sibs=State.pages.filter(p=>p.parentId===newParentId).sort((a,b)=>a.order-b.order);
+        const ti=sibs.findIndex(s=>s.id===targetId);
+        insertBeforeId=zone==='after'?(sibs[ti+1]?.id??null):targetId;
       }
 
       Pages.reparent(dragId,newParentId,insertBeforeId);
