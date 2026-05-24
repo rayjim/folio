@@ -56,6 +56,9 @@ button{font-family:var(--font-ui);cursor:pointer}
 .tab{display:flex;align-items:center;gap:6px;padding:0 14px;font-size:12px;color:var(--text-sec);border-right:1px solid var(--border);cursor:pointer;user-select:none;white-space:nowrap;flex-shrink:0}
 .tab:hover{background:var(--bg-hover);color:var(--text-pri)}
 .tab.active{background:var(--bg-content);color:var(--text-pri);border-bottom:2px solid var(--accent)}
+.tab.dragging{opacity:.4}
+.tab.tab-drop-before{border-left:2px solid #4a9eff}
+.tab.tab-drop-after{border-right:2px solid #4a9eff}
 .tab-name{max-width:130px;overflow:hidden;text-overflow:ellipsis}
 .tab-x{opacity:0;font-size:15px;line-height:1;color:var(--text-sec);padding:0 1px;background:none;border:none}
 .tab:hover .tab-x{opacity:1}
@@ -1254,6 +1257,7 @@ const UI = {
         e.stopPropagation();
         if(Notebooks.delete(nb.id)){this.renderAll();Editor.loadPage(State.activePageId);}
       });
+      this._attachNotebookDrag(el,nb);
       bar.appendChild(el);
     });
   },
@@ -1284,6 +1288,7 @@ const UI = {
     acts.className='tree-actions';
     acts.innerHTML=`<button class="tree-act-btn" title="Options">⋯</button>`;
     row.append(chev,lbl,acts); wrap.appendChild(row);
+    this._attachPageDrag(row,pg,depth);
 
     if(hasKids) chev.addEventListener('click',e=>{
       e.stopPropagation();
@@ -1307,83 +1312,57 @@ const UI = {
     return wrap;
   },
 
-  _drag:{id:null}, _dropTarget:null,
+  _drag:{id:null,type:null}, _dropTarget:null,
   _clearDropUI(){
     document.getElementById('drop-indicator').style.display='none';
     document.querySelectorAll('.tree-row.drop-target').forEach(r=>r.classList.remove('drop-target'));
+    document.querySelectorAll('.tab.tab-drop-before,.tab.tab-drop-after').forEach(t=>t.classList.remove('tab-drop-before','tab-drop-after'));
   },
-  _initDragDrop(){
-    const tree=document.getElementById('page-tree');
-    const ind=document.getElementById('drop-indicator');
-
-    tree.addEventListener('dragstart',e=>{
-      const row=e.target.closest('.tree-row[draggable]');
-      if(!row) return;
-      this._drag.id=row.dataset.pageId;
-      setTimeout(()=>row.classList.add('dragging'),0);
+  _attachPageDrag(row,pg,depth){
+    row.addEventListener('dragstart',e=>{
+      e.stopPropagation();
+      UI._drag={id:pg.id,type:'page'};
       e.dataTransfer.effectAllowed='move';
+      e.dataTransfer.setData('text/plain',pg.id);
+      setTimeout(()=>row.classList.add('dragging'),0);
     });
-
-    tree.addEventListener('dragend',()=>{
-      document.querySelectorAll('.tree-row.dragging').forEach(r=>r.classList.remove('dragging'));
-      this._clearDropUI();
-      this._drag.id=null; this._dropTarget=null;
+    row.addEventListener('dragend',()=>{
+      row.classList.remove('dragging');
+      UI._clearDropUI();
+      UI._drag={id:null,type:null}; UI._dropTarget=null;
     });
-
-    tree.addEventListener('dragover',e=>{
-      e.preventDefault();
-      if(!this._drag.id) return;
-      const row=e.target.closest('.tree-row');
-      if(!row) return;
-      const targetId=row.dataset.pageId;
-      if(targetId===this._drag.id||Pages.isDescendant(targetId,this._drag.id)) return;
-
+    row.addEventListener('dragenter',e=>e.preventDefault());
+    row.addEventListener('dragover',e=>{
+      e.preventDefault(); e.stopPropagation();
+      if(!UI._drag.id||UI._drag.type!=='page') return;
+      if(UI._drag.id===pg.id||Pages.isDescendant(pg.id,UI._drag.id)) return;
       const rect=row.getBoundingClientRect();
-      const treeRect=tree.getBoundingClientRect();
       const relY=(e.clientY-rect.top)/rect.height;
-      const targetDepth=parseInt(row.dataset.depth)||0;
-
-      // 3 zones: top 30% = before, middle 40% = child, bottom 30% = after
-      let zone;
-      if(relY<0.3) zone='before';
-      else if(relY>0.7) zone='after';
-      else zone='child';
-
-      // Can't nest deeper than MAX_DEPTH
-      if(zone==='child'&&targetDepth>=MAX_DEPTH) zone='after';
-
-      this._clearDropUI();
-      this._dropTarget={targetId,zone};
-
+      let zone=relY<0.3?'before':relY>0.7?'after':'child';
+      if(zone==='child'&&depth>=MAX_DEPTH) zone='after';
+      UI._clearDropUI();
+      UI._dropTarget={targetId:pg.id,zone};
       if(zone==='child'){
         row.classList.add('drop-target');
       } else {
-        const indLeft=(targetDepth*16)+8;
+        const ind=document.getElementById('drop-indicator');
+        const tree=document.getElementById('page-tree');
+        const indLeft=depth*16+8;
         ind.style.setProperty('--di-left',indLeft+'px');
-        ind.style.top=((zone==='after'?rect.bottom:rect.top)-treeRect.top+tree.scrollTop)+'px';
-        ind.style.left=indLeft+'px';
-        ind.style.display='block';
+        ind.style.top=((zone==='after'?rect.bottom:rect.top)-tree.getBoundingClientRect().top+tree.scrollTop)+'px';
+        ind.style.left=indLeft+'px'; ind.style.display='block';
       }
     });
-
-    tree.addEventListener('dragleave',e=>{
-      if(!tree.contains(e.relatedTarget)) this._clearDropUI();
-    });
-
-    tree.addEventListener('drop',e=>{
-      e.preventDefault();
-      this._clearDropUI();
-      if(!this._drag.id||!this._dropTarget) return;
-      const {targetId,zone}=this._dropTarget;
-      this._dropTarget=null;
-      const dragId=this._drag.id;
+    row.addEventListener('drop',e=>{
+      e.preventDefault(); e.stopPropagation();
+      UI._clearDropUI();
+      if(!UI._drag.id||UI._drag.type!=='page'||!UI._dropTarget) return;
+      const {targetId,zone}=UI._dropTarget; UI._dropTarget=null;
+      const dragId=UI._drag.id;
       const targetPg=State.pages.find(p=>p.id===targetId);
-
-      let newParentId, insertBeforeId;
+      let newParentId,insertBeforeId;
       if(zone==='child'){
-        // nest inside target — append as last child
-        newParentId=targetId;
-        insertBeforeId=null;
+        newParentId=targetId; insertBeforeId=null;
         Pages.update(targetId,{collapsed:false,modifiedAt:targetPg.modifiedAt});
       } else {
         newParentId=targetPg.parentId??null;
@@ -1391,11 +1370,52 @@ const UI = {
         const ti=sibs.findIndex(s=>s.id===targetId);
         insertBeforeId=zone==='after'?(sibs[ti+1]?.id??null):targetId;
       }
-
       Pages.reparent(dragId,newParentId,insertBeforeId);
-      Editor.saveNow();
-      UI.renderAll();
+      Editor.saveNow(); UI.renderAll();
     });
+  },
+  _attachNotebookDrag(el,nb){
+    el.setAttribute('draggable','true');
+    el.addEventListener('dragstart',e=>{
+      e.stopPropagation();
+      UI._drag={id:nb.id,type:'notebook'};
+      e.dataTransfer.effectAllowed='move';
+      setTimeout(()=>el.classList.add('dragging'),0);
+    });
+    el.addEventListener('dragend',()=>{
+      el.classList.remove('dragging');
+      UI._clearDropUI();
+      UI._drag={id:null,type:null}; UI._dropTarget=null;
+    });
+    el.addEventListener('dragenter',e=>e.preventDefault());
+    el.addEventListener('dragover',e=>{
+      e.preventDefault(); e.stopPropagation();
+      if(!UI._drag.id||UI._drag.type!=='notebook'||UI._drag.id===nb.id) return;
+      const rect=el.getBoundingClientRect();
+      const zone=e.clientX<rect.left+rect.width/2?'before':'after';
+      UI._clearDropUI();
+      UI._dropTarget={targetId:nb.id,zone};
+      el.classList.add(zone==='before'?'tab-drop-before':'tab-drop-after');
+    });
+    el.addEventListener('drop',e=>{
+      e.preventDefault(); e.stopPropagation();
+      UI._clearDropUI();
+      if(!UI._drag.id||UI._drag.type!=='notebook'||!UI._dropTarget) return;
+      const {targetId,zone}=UI._dropTarget; UI._dropTarget=null;
+      const dragId=UI._drag.id;
+      if(dragId===targetId) return;
+      const sorted=[...State.notebooks].sort((a,b)=>a.order-b.order);
+      const dragged=sorted.splice(sorted.findIndex(n=>n.id===dragId),1)[0];
+      let ti=sorted.findIndex(n=>n.id===targetId);
+      if(zone==='after') ti++;
+      sorted.splice(ti,0,dragged);
+      sorted.forEach((n,i)=>n.order=i);
+      State.flush(); UI.renderTabs();
+    });
+  },
+  _initDragDrop(){
+    // Global fallback cleanup in case dragend doesn't fire on the element
+    document.addEventListener('dragend',()=>UI._clearDropUI());
   }
 };
 
