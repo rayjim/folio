@@ -56,6 +56,7 @@ button{font-family:var(--font-ui);cursor:pointer}
 .tab{display:flex;align-items:center;gap:6px;padding:0 14px;font-size:12px;color:var(--text-sec);border-right:1px solid var(--border);cursor:pointer;user-select:none;white-space:nowrap;flex-shrink:0}
 .tab:hover{background:var(--bg-hover);color:var(--text-pri)}
 .tab.active{background:var(--bg-content);color:var(--text-pri);border-bottom:2px solid var(--accent)}
+.tab[draggable="true"]{cursor:grab}
 .tab.dragging{opacity:.4}
 .tab.tab-drop-before{border-left:2px solid #4a9eff}
 .tab.tab-drop-after{border-right:2px solid #4a9eff}
@@ -1240,6 +1241,7 @@ const UI = {
     State.notebooks.forEach(nb=>{
       const el=document.createElement('div');
       el.className='tab'+(nb.id===State.activeNotebookId?' active':'');
+      el.dataset.nbId=nb.id;
       el.innerHTML=`<span class="tab-name" title="${Utils.escapeHtml(nb.name)}">${Utils.escapeHtml(nb.name)}</span>
                     <button class="tab-x" title="Delete">×</button>`;
       el.addEventListener('click',e=>{
@@ -1378,9 +1380,9 @@ const UI = {
   _attachNotebookDrag(el,nb){
     el.setAttribute('draggable','true');
     el.addEventListener('dragstart',e=>{
-      e.stopPropagation();
       UI._drag={id:nb.id,type:'notebook'};
       e.dataTransfer.effectAllowed='move';
+      e.dataTransfer.setData('text/plain',nb.id);
       setTimeout(()=>el.classList.add('dragging'),0);
     });
     el.addEventListener('dragend',()=>{
@@ -1388,18 +1390,28 @@ const UI = {
       UI._clearDropUI();
       UI._drag={id:null,type:null}; UI._dropTarget=null;
     });
-    el.addEventListener('dragenter',e=>e.preventDefault());
-    el.addEventListener('dragover',e=>{
-      e.preventDefault(); e.stopPropagation();
-      if(!UI._drag.id||UI._drag.type!=='notebook'||UI._drag.id===nb.id) return;
-      const rect=el.getBoundingClientRect();
+  },
+  _initDragDrop(){
+    document.addEventListener('dragend',()=>UI._clearDropUI());
+
+    // Notebook tab drag — delegated on the bar so gaps between tabs work too
+    const bar=document.getElementById('tab-bar-notebooks');
+    bar.addEventListener('dragover',e=>{
+      e.preventDefault();
+      if(!UI._drag.id||UI._drag.type!=='notebook') return;
+      const tab=e.target.closest('.tab');
+      if(!tab||tab.dataset.nbId===UI._drag.id) return;
+      const rect=tab.getBoundingClientRect();
       const zone=e.clientX<rect.left+rect.width/2?'before':'after';
       UI._clearDropUI();
-      UI._dropTarget={targetId:nb.id,zone};
-      el.classList.add(zone==='before'?'tab-drop-before':'tab-drop-after');
+      UI._dropTarget={targetId:tab.dataset.nbId,zone};
+      tab.classList.add(zone==='before'?'tab-drop-before':'tab-drop-after');
     });
-    el.addEventListener('drop',e=>{
-      e.preventDefault(); e.stopPropagation();
+    bar.addEventListener('dragleave',e=>{
+      if(!bar.contains(e.relatedTarget)) UI._clearDropUI();
+    });
+    bar.addEventListener('drop',e=>{
+      e.preventDefault();
       UI._clearDropUI();
       if(!UI._drag.id||UI._drag.type!=='notebook'||!UI._dropTarget) return;
       const {targetId,zone}=UI._dropTarget; UI._dropTarget=null;
@@ -1413,10 +1425,6 @@ const UI = {
       sorted.forEach((n,i)=>n.order=i);
       State.flush(); UI.renderTabs();
     });
-  },
-  _initDragDrop(){
-    // Global fallback cleanup in case dragend doesn't fire on the element
-    document.addEventListener('dragend',()=>UI._clearDropUI());
   }
 };
 
