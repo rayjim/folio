@@ -1,4 +1,4 @@
-# Notes
+# Folio
 
 A personal note-taking app built to render AI-generated HTML and Markdown natively — without the limitations of OneNote or similar tools.
 
@@ -158,9 +158,9 @@ Tests are written in vanilla JS with no external test framework dependency.
 
 | Key | Contents |
 |---|---|
-| `notesapp_v1_nb` | JSON array of Notebook objects |
-| `notesapp_v1_pg` | JSON array of Page objects |
-| `notesapp_v1_st` | JSON object — active selections, theme, font size |
+| `folio_v1_nb` | JSON array of Notebook objects |
+| `folio_v1_pg` | JSON array of Page objects |
+| `folio_v1_st` | JSON object — active selections, theme, font size |
 
 ---
 

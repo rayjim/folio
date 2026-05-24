@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Notes</title>
+<title>Folio</title>
 <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
 <link  id="hljs-css" rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
@@ -412,7 +412,7 @@ const Utils = {
 };
 
 /* ============================================================ STORAGE */
-const KEYS = { notebooks:'notesapp_v1_nb', pages:'notesapp_v1_pg', state:'notesapp_v1_st' };
+const KEYS = { notebooks:'folio_v1_nb', pages:'folio_v1_pg', state:'folio_v1_st' };
 const Storage = {
   load(k){ try{ return JSON.parse(localStorage.getItem(k))||null }catch{ return null } },
   save(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)) }catch(e){ console.warn(e) } }
@@ -421,7 +421,7 @@ const Storage = {
 /* ============================================================ FILE STORE */
 const FileStore = {
   _db:null, _dataDir:null, _attachDir:null,
-  _IDB:'notesapp_v1', _STORE:'handles',
+  _IDB:'folio_v1', _STORE:'handles',
 
   async _openDB(){
     if(this._db) return this._db;
@@ -562,8 +562,8 @@ const State = {
 
   _seed(){
     const nb=Notebooks.create('My Notebook');
-    const pg=Pages.create(nb.id,null,'Welcome to Notes');
-    pg.content=`<h1>Welcome to Notes</h1>
+    const pg=Pages.create(nb.id,null,'Welcome to Folio');
+    pg.content=`<h1>Welcome to Folio</h1>
 <p>Your personal note-taking app — built to render AI-generated HTML and Markdown beautifully.</p>
 <h2>Quick Start</h2>
 <ul>
@@ -1094,7 +1094,7 @@ del{text-decoration:line-through;color:#888}
 </style></head><body>
 <h1>${Utils.escapeHtml(pg.title)}</h1>
 ${body}
-<div class="footer">Created ${new Date(pg.createdAt).toLocaleString()} · Modified ${new Date(pg.modifiedAt).toLocaleString()} · Exported from Notes</div>
+<div class="footer">Created ${new Date(pg.createdAt).toLocaleString()} · Modified ${new Date(pg.modifiedAt).toLocaleString()} · Exported from Folio</div>
 </body></html>`;
     const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob([html],{type:'text/html'})),download:(pg.title.replace(/[^\w\s-]/g,'').trim()||'export')+'.html'});
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
