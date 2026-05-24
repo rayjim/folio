@@ -215,8 +215,10 @@ button{font-family:var(--font-ui);cursor:pointer}
 #no-page-state{display:none;flex:1;flex-direction:column;align-items:center;justify-content:center;color:var(--text-dim);gap:10px}
 #no-page-state .nps-icon{font-size:38px;opacity:.25}
 /* ============================================================ CONTEXT MENU */
-#ctx-menu{display:none;position:fixed;background:var(--bg-overlay);border:1px solid var(--border2);border-radius:6px;padding:4px 0;box-shadow:0 4px 18px rgba(0,0,0,.5);z-index:2000;min-width:155px}
-#ctx-menu.open{display:block}
+#ctx-menu,#nb-ctx-menu{display:none;position:fixed;background:var(--bg-overlay);border:1px solid var(--border2);border-radius:6px;padding:4px 0;box-shadow:0 4px 18px rgba(0,0,0,.5);z-index:2000;min-width:155px}
+#ctx-menu.open,#nb-ctx-menu.open{display:block}
+#save-indicator{font-size:11px;color:#5dbb5d;opacity:0;transition:opacity .3s;padding:0 8px;align-self:center;white-space:nowrap;pointer-events:none}
+#save-indicator.show{opacity:1}
 .ctx-item{padding:7px 14px;font-size:13px;color:var(--text-pri);cursor:pointer}
 .ctx-item:hover{background:var(--bg-hover)}
 .ctx-item.danger{color:#e06060}
@@ -277,6 +279,7 @@ button{font-family:var(--font-ui);cursor:pointer}
   <div id="tab-bar-notebooks"></div>
   <button id="btn-add-nb">＋ Notebook</button>
   <div class="tab-spacer"></div>
+  <span id="save-indicator"></span>
   <button id="storage-btn" title="Data storage settings">📁<span id="storage-dot"></span></button>
   <button id="theme-btn" title="Toggle light / dark theme">🌙</button>
   <div id="search-wrap">
@@ -361,6 +364,18 @@ button{font-family:var(--font-ui);cursor:pointer}
         </div>
         <button class="tb-btn" id="btn-set-attach-dir" style="flex-shrink:0">Set Separate…</button>
       </div>
+      <div class="stor-row">
+        <div class="stor-icon">🗂</div>
+        <div class="stor-info">
+          <div class="stor-label">Default Data Folder Path</div>
+          <div style="display:flex;gap:6px;margin-top:4px">
+            <input type="text" id="stor-default-path" placeholder="e.g. C:\Users\user\Documents\folio"
+              style="flex:1;background:#1e1e1e;border:1px solid #3a3a3a;color:#e4e4e4;padding:4px 8px;border-radius:4px;font-size:12px;min-width:0">
+            <button class="tb-btn" id="btn-save-default-path">Save</button>
+          </div>
+          <div style="font-size:11px;color:#666;margin-top:3px">Used by folio-start.ps1 as the suggested folder on first launch.</div>
+        </div>
+      </div>
       <div class="stor-div"></div>
       <div class="stor-btns">
         <button class="tb-btn" id="btn-save-now">💾 Save to Folder</button>
@@ -399,6 +414,15 @@ button{font-family:var(--font-ui);cursor:pointer}
   <div class="ctx-item danger" data-action="delete">Delete</div>
 </div>
 
+<div id="nb-ctx-menu">
+  <div class="ctx-item" data-nb-action="move-left">← Move Left</div>
+  <div class="ctx-item" data-nb-action="move-right">Move Right →</div>
+  <div class="ctx-sep"></div>
+  <div class="ctx-item" data-nb-action="rename">Rename…</div>
+  <div class="ctx-sep"></div>
+  <div class="ctx-item danger" data-nb-action="delete">Delete</div>
+</div>
+
 <script>
 'use strict';
 /* ============================================================ UTILS */
@@ -426,7 +450,7 @@ const Utils = {
 
 /* ============================================================ STORAGE */
 const MAX_DEPTH = 3; // max nesting depth (0 = root, 3 = deepest allowed)
-const KEYS = { notebooks:'folio_v1_nb', pages:'folio_v1_pg', state:'folio_v1_st' };
+const KEYS = { notebooks:'folio_v1_nb', pages:'folio_v1_pg', state:'folio_v1_st', defaultPath:'folio_v1_default_path' };
 const Storage = {
   load(k){ try{ return JSON.parse(localStorage.getItem(k))||null }catch{ return null } },
   save(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)) }catch(e){ console.warn(e) } }
@@ -510,6 +534,10 @@ const FileStore = {
         activeNotebookId:State.activeNotebookId, activePageId:State.activePageId,
         viewMode:State.viewMode, theme:State.theme, fontSize:State.fontSize
       });
+      try{
+        const fh=await this._dataDir.getFileHandle('pages.json');
+        FilePoller._ownMod=(await fh.getFile()).lastModified;
+      }catch{}
       return true;
     }catch(e){ console.warn('FileStore.save:',e); return false; }
   },
@@ -551,6 +579,29 @@ const FileStore = {
   dataName(){ return this._dataDir?.name??null; },
   attachName(){ return this._attachDir?.name??null; },
   isLinked(){ return !!this._dataDir; },
+};
+
+/* ============================================================ FILE POLLER (cross-browser sync) */
+const FilePoller = {
+  _timer:null, _ownMod:0,
+
+  start(){
+    if(this._timer) return;
+    this._timer=setInterval(()=>this._check(),3000);
+  },
+
+  async _check(){
+    if(!FileStore.isLinked()) return;
+    try{
+      if(await FileStore._dataDir.queryPermission({mode:'readwrite'})!=='granted') return;
+      const fh=await FileStore._dataDir.getFileHandle('pages.json');
+      const f=await fh.getFile();
+      if(f.lastModified<=this._ownMod) return;
+      this._ownMod=f.lastModified;
+      const ok=await FileStore.load();
+      if(ok){ UI.renderAll(); Editor.loadPage(State.activePageId); flashSynced(); }
+    }catch{}
+  }
 };
 
 /* ============================================================ STATE */
@@ -622,6 +673,7 @@ const State = {
       viewMode:this.viewMode, theme:this.theme, fontSize:this.fontSize
     });
     FileStore.save(); // async fire-and-forget; no-op if no folder linked
+    if(typeof flashSaved==='function') flashSaved();
   },
   notebook(id){ return this.notebooks.find(n=>n.id===(id??this.activeNotebookId)) },
   page(id)    { return this.pages.find(p=>p.id===id) },
@@ -1209,6 +1261,8 @@ const StorageUI = {
     const an=FileStore.attachName();
     if(an){ ap.textContent='📁 '+an; ap.classList.remove('empty'); }
     else { ap.textContent='attachments/ sub-folder (same as notes data)'; ap.classList.add('empty'); }
+    const dpInput=document.getElementById('stor-default-path');
+    if(dpInput) dpInput.value=localStorage.getItem(KEYS.defaultPath)||'';
   },
   setStatus(msg,ok){
     const el=document.getElementById('stor-status');
@@ -1238,7 +1292,8 @@ const UI = {
 
   renderTabs(){
     const bar=document.getElementById('tab-bar-notebooks'); bar.innerHTML='';
-    State.notebooks.forEach(nb=>{
+    const sortedNbs=[...State.notebooks].sort((a,b)=>a.order-b.order);
+    sortedNbs.forEach(nb=>{
       const el=document.createElement('div');
       el.className='tab'+(nb.id===State.activeNotebookId?' active':'');
       el.dataset.nbId=nb.id;
@@ -1260,6 +1315,7 @@ const UI = {
         e.stopPropagation();
         if(Notebooks.delete(nb.id)){this.renderAll();Editor.loadPage(State.activePageId);}
       });
+      el.addEventListener('contextmenu',e=>{e.preventDefault();NbCtxMenu.show(e,nb);});
       bar.appendChild(el);
     });
   },
@@ -1392,17 +1448,20 @@ const UI = {
       if(!nbDrag.moved&&Math.abs(e.clientX-nbDrag.startX)<6) return;
       nbDrag.moved=true;
       nbDrag.el.classList.add('dragging');
-      UI._clearDropUI();
-      for(const t of bar.querySelectorAll('.tab')){
-        if(t.dataset.nbId===nbDrag.id) continue;
+      document.querySelectorAll('.tab.tab-drop-before,.tab.tab-drop-after')
+        .forEach(t=>t.classList.remove('tab-drop-before','tab-drop-after'));
+      const tabs=[...bar.querySelectorAll('.tab')].filter(t=>t.dataset.nbId!==nbDrag.id);
+      if(!tabs.length) return;
+      let nearest=tabs[0],minDist=Infinity;
+      for(const t of tabs){
         const r=t.getBoundingClientRect();
-        if(e.clientX>=r.left&&e.clientX<=r.right){
-          const zone=e.clientX<r.left+r.width/2?'before':'after';
-          UI._dropTarget={targetId:t.dataset.nbId,zone};
-          t.classList.add(zone==='before'?'tab-drop-before':'tab-drop-after');
-          break;
-        }
+        const dist=Math.abs(e.clientX-(r.left+r.width/2));
+        if(dist<minDist){minDist=dist;nearest=t;}
       }
+      const nr=nearest.getBoundingClientRect();
+      const zone=e.clientX<nr.left+nr.width/2?'before':'after';
+      UI._dropTarget={targetId:nearest.dataset.nbId,zone};
+      nearest.classList.add(zone==='before'?'tab-drop-before':'tab-drop-after');
     });
     document.addEventListener('pointerup',()=>{
       if(!nbDrag) return;
@@ -1463,6 +1522,54 @@ const CtxMenu = {
   }
 };
 
+/* ============================================================ NOTEBOOK CONTEXT MENU */
+let _saveIndTimer=null;
+function flashSaved(){
+  const el=document.getElementById('save-indicator');
+  if(!el) return;
+  el.textContent='Saved ✓'; el.classList.add('show');
+  clearTimeout(_saveIndTimer);
+  _saveIndTimer=setTimeout(()=>el.classList.remove('show'),1800);
+}
+function flashSynced(){
+  const el=document.getElementById('save-indicator');
+  if(!el) return;
+  el.textContent='Synced ↓'; el.classList.add('show');
+  clearTimeout(_saveIndTimer);
+  _saveIndTimer=setTimeout(()=>el.classList.remove('show'),2000);
+}
+
+const NbCtxMenu = {
+  _target:null,
+  show(e,nb){
+    this._target=nb; CtxMenu.hide();
+    const m=document.getElementById('nb-ctx-menu');
+    const sorted=[...State.notebooks].sort((a,b)=>a.order-b.order);
+    const idx=sorted.findIndex(n=>n.id===nb.id);
+    m.querySelector('[data-nb-action="move-left"]').style.display=idx>0?'':'none';
+    m.querySelector('[data-nb-action="move-right"]').style.display=idx<sorted.length-1?'':'none';
+    m.style.left=e.clientX+'px'; m.style.top=e.clientY+'px';
+    m.classList.add('open');
+  },
+  hide(){ document.getElementById('nb-ctx-menu').classList.remove('open'); this._target=null; },
+  handle(action){
+    const nb=this._target; this.hide(); if(!nb) return;
+    if(action==='move-left'||action==='move-right'){
+      const sorted=[...State.notebooks].sort((a,b)=>a.order-b.order);
+      const idx=sorted.findIndex(n=>n.id===nb.id);
+      const swap=action==='move-left'?idx-1:idx+1;
+      if(swap<0||swap>=sorted.length) return;
+      [sorted[idx].order,sorted[swap].order]=[sorted[swap].order,sorted[idx].order];
+      State.flush(); UI.renderTabs();
+    } else if(action==='rename'){
+      const name=prompt('Rename notebook:',nb.name);
+      if(name?.trim()){Notebooks.rename(nb.id,name.trim());UI.renderTabs();}
+    } else if(action==='delete'){
+      if(Notebooks.delete(nb.id)){UI.renderAll();Editor.loadPage(State.activePageId);}
+    }
+  }
+};
+
 /* ============================================================ INIT */
 document.addEventListener('DOMContentLoaded',async()=>{
   marked.setOptions({gfm:true,breaks:false});
@@ -1470,6 +1577,7 @@ document.addEventListener('DOMContentLoaded',async()=>{
 
   // Try to load from linked folder (overrides localStorage if successful)
   await FileStore.init();
+  if(FileStore.isLinked()) FilePoller.start();
   const fromFile=await FileStore.load();
   if(fromFile){
     if(!State.notebooks.find(n=>n.id===State.activeNotebookId))
@@ -1586,10 +1694,14 @@ document.addEventListener('DOMContentLoaded',async()=>{
   document.getElementById('tb-export').addEventListener('click',()=>Export.page());
   document.getElementById('type-badge').addEventListener('click',()=>Editor.cycleContentType());
 
-  // Context menu
+  // Context menus
   document.getElementById('ctx-menu').addEventListener('click',e=>{
     const item=e.target.closest('.ctx-item');
     if(item?.dataset.action) CtxMenu.handle(item.dataset.action);
+  });
+  document.getElementById('nb-ctx-menu').addEventListener('click',e=>{
+    const item=e.target.closest('.ctx-item');
+    if(item?.dataset.nbAction) NbCtxMenu.handle(item.dataset.nbAction);
   });
 
   // Storage modal
@@ -1601,6 +1713,7 @@ document.addEventListener('DOMContentLoaded',async()=>{
   document.getElementById('btn-set-data-dir').addEventListener('click',async()=>{
     try{
       const h=await FileStore.pickData();
+      FilePoller.start();
       StorageUI.refresh();
       StorageUI.setStatus('Linked: '+h.name+' — saving…',true);
       const ok=await FileStore.save();
@@ -1609,6 +1722,12 @@ document.addEventListener('DOMContentLoaded',async()=>{
       if(e.name==='AbortError') return; // user cancelled
       StorageUI.setStatus('['+e.name+'] '+e.message,false);
     }
+  });
+  document.getElementById('btn-save-default-path').addEventListener('click',()=>{
+    const val=document.getElementById('stor-default-path').value.trim();
+    if(val) localStorage.setItem(KEYS.defaultPath,val);
+    else localStorage.removeItem(KEYS.defaultPath);
+    StorageUI.setStatus(val?'Default path saved ✓':'Default path cleared',!!val);
   });
   document.getElementById('btn-set-attach-dir').addEventListener('click',async()=>{
     try{
@@ -1648,6 +1767,7 @@ document.addEventListener('DOMContentLoaded',async()=>{
   // Close overlays on outside click
   document.addEventListener('click',e=>{
     if(!e.target.closest('#ctx-menu')) CtxMenu.hide();
+    if(!e.target.closest('#nb-ctx-menu')) NbCtxMenu.hide();
     if(!e.target.closest('#color-palette')&&!e.target.closest('#tb-color')) ColorPicker.close();
     if(!e.target.closest('#search-wrap')) document.getElementById('search-results').classList.remove('open');
   });
@@ -1655,7 +1775,7 @@ document.addEventListener('DOMContentLoaded',async()=>{
   // Keyboard shortcuts
   document.addEventListener('keydown',e=>{
     const mod=e.ctrlKey||e.metaKey;
-    if(e.key==='Escape'){Search.close();CtxMenu.hide();ColorPicker.close();return;}
+    if(e.key==='Escape'){Search.close();CtxMenu.hide();NbCtxMenu.hide();ColorPicker.close();return;}
     if(mod&&e.key==='/')   {e.preventDefault();Editor.toggleViewMode();}
     else if(mod&&e.key==='f'){e.preventDefault();si.focus();si.select();}
     else if(mod&&!e.shiftKey&&e.key==='n'){e.preventDefault();document.getElementById('btn-new-page').click();}
@@ -1691,6 +1811,27 @@ document.addEventListener('DOMContentLoaded',async()=>{
       },2000);
     }
   },30000);
+
+  // Same-browser tab sync via StorageEvent
+  // (StorageEvent fires in OTHER tabs only — no echo)
+  let _storSyncTimer=null;
+  window.addEventListener('storage',e=>{
+    if(![KEYS.notebooks,KEYS.pages,KEYS.state].includes(e.key)) return;
+    clearTimeout(_storSyncTimer);
+    _storSyncTimer=setTimeout(()=>{
+      const nb=Storage.load(KEYS.notebooks);
+      const pg=Storage.load(KEYS.pages);
+      const s=Storage.load(KEYS.state);
+      if(nb) State.notebooks=nb;
+      if(pg) State.pages=pg;
+      if(s){
+        State.activeNotebookId=s.activeNotebookId??State.activeNotebookId;
+        State.activePageId=s.activePageId??State.activePageId;
+      }
+      UI.renderAll(); Editor.loadPage(State.activePageId);
+      flashSynced();
+    },150);
+  });
 
   UI.renderAll(); Editor.loadPage(State.activePageId);
   UI._initDragDrop();
