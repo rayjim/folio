@@ -461,15 +461,17 @@ const FileStore = {
   },
 
   async pickData(){
-    const h=await window.showDirectoryPicker({mode:'readwrite'});
-    this._dataDir=h; // set immediately so this session works even if IDB storage fails
-    try{ await this._put('data',h); }catch(e){ console.warn('FileStore: could not persist data handle',e); }
+    // No mode:'readwrite' here — Chrome silently aborts the picker on file:// when readwrite
+    // is requested upfront. Write permission is obtained lazily in _perm() on first save.
+    const h=await window.showDirectoryPicker();
+    this._dataDir=h;
+    try{ await this._put('data',h); }catch(e){ console.warn('FileStore: handle not persisted (file:// limitation)',e); }
     return h;
   },
   async pickAttach(){
-    const h=await window.showDirectoryPicker({mode:'readwrite'});
+    const h=await window.showDirectoryPicker();
     this._attachDir=h;
-    try{ await this._put('attach',h); }catch(e){ console.warn('FileStore: could not persist attach handle',e); }
+    try{ await this._put('attach',h); }catch(e){ console.warn('FileStore: handle not persisted',e); }
     return h;
   },
 
@@ -1134,7 +1136,7 @@ const StorageUI = {
     if(!('showDirectoryPicker' in window)){
       apiNote.innerHTML='⚠ <strong>File System Access API not supported</strong> — use Chrome or Edge for folder sync.';
     } else if(location.protocol==='file:'){
-      apiNote.innerHTML='⚠ <strong>Opened as file://</strong> — folder links work this session but won\'t survive a reload (browser blocks IndexedDB handle storage for local files). For full persistence, run a local server: <code>python3 -m http.server 8080</code>';
+      apiNote.innerHTML='<strong>ℹ file:// mode</strong> — Link works this session only. Re-link after each reload, or run via server (<code>python3 -m http.server 8080</code>) for auto-persistence.';
     } else { apiNote.textContent=''; }
     const dp=document.getElementById('stor-data-path');
     const dn=FileStore.dataName();
@@ -1417,19 +1419,25 @@ document.addEventListener('DOMContentLoaded',async()=>{
   });
   document.getElementById('btn-set-data-dir').addEventListener('click',async()=>{
     try{
-      await FileStore.pickData();
+      const h=await FileStore.pickData();
       StorageUI.refresh();
-      StorageUI.setStatus('Folder linked — saving now…',true);
+      StorageUI.setStatus('Linked: '+h.name+' — saving…',true);
       const ok=await FileStore.save();
-      StorageUI.setStatus(ok?'Saved to folder ✓':'Linked — grant permission to save.',ok);
-    }catch(e){ if(e.name!=='AbortError') StorageUI.setStatus('Error: '+e.message,false); }
+      StorageUI.setStatus(ok?'Saved to '+h.name+' ✓':'Linked: '+h.name+' (grant write permission when prompted)',ok);
+    }catch(e){
+      if(e.name==='AbortError') return; // user cancelled
+      StorageUI.setStatus('['+e.name+'] '+e.message,false);
+    }
   });
   document.getElementById('btn-set-attach-dir').addEventListener('click',async()=>{
     try{
-      await FileStore.pickAttach();
+      const h=await FileStore.pickAttach();
       StorageUI.refresh();
-      StorageUI.setStatus('Attachments folder linked ✓',true);
-    }catch(e){ if(e.name!=='AbortError') StorageUI.setStatus('Error: '+e.message,false); }
+      StorageUI.setStatus('Attachments linked: '+h.name+' ✓',true);
+    }catch(e){
+      if(e.name==='AbortError') return;
+      StorageUI.setStatus('['+e.name+'] '+e.message,false);
+    }
   });
   document.getElementById('btn-save-now').addEventListener('click',async()=>{
     if(!FileStore.isLinked()){StorageUI.setStatus('No folder linked — click "Change…" first.',false);return;}
