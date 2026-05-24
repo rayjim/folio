@@ -1493,6 +1493,24 @@ document.addEventListener('DOMContentLoaded',async()=>{
   });
 
   window.addEventListener('beforeunload',()=>Editor.saveNow());
+
+  // Auto-save to linked folder every 60 seconds
+  setInterval(async()=>{
+    if(!FileStore.isLinked()) return;
+    Editor.saveNow(); // flush any pending in-editor changes first
+    const ok=await FileStore.save();
+    if(ok){
+      const ind=document.getElementById('save-indicator');
+      ind.textContent='Folder saved ✓';
+      ind.classList.add('show');
+      clearTimeout(Editor._indTimer);
+      Editor._indTimer=setTimeout(()=>{
+        ind.classList.remove('show');
+        ind.textContent='Saved ✓'; // restore default text
+      },2000);
+    }
+  },60000);
+
   UI.renderAll(); Editor.loadPage(State.activePageId);
 });
 </script>
