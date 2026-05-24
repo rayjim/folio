@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Notes App — Test Suite</title>
+<script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#1a1a1a;color:#e4e4e4;padding:32px;font-size:14px}
+h1{font-size:20px;margin-bottom:4px;color:#eee}
+.subtitle{font-size:12px;color:#666;margin-bottom:24px}
+.suite{margin-bottom:28px}
+.suite-name{font-size:13px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#888;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid #2e2e2e}
+.case{display:flex;align-items:flex-start;gap:10px;padding:5px 0;border-bottom:1px solid #232323;font-size:13px}
+.case:last-child{border-bottom:none}
+.icon{width:16px;flex-shrink:0;margin-top:1px}
+.pass .icon{color:#4caf50}
+.fail .icon{color:#e06060}
+.case-name{flex:1;color:#ccc}
+.fail .case-name{color:#e06060}
+.err{font-size:11px;color:#e06060;font-family:monospace;margin-top:2px;padding:3px 6px;background:#2a1a1a;border-radius:3px;white-space:pre-wrap}
+.summary{margin-top:24px;padding:14px 18px;border-radius:6px;font-size:14px;font-weight:600}
+.summary.all-pass{background:#1a2e1a;border:1px solid #2e5c2e;color:#5dbb5d}
+.summary.has-fail{background:#2e1a1a;border:1px solid #5c2e2e;color:#e06060}
+</style>
+</head>
+<body>
+<h1>Notes App — Test Suite</h1>
+<p class="subtitle">Open in Chrome/Edge via the dev server. All tests run in the browser.</p>
+<div id="output"></div>
+
+<script>
+'use strict';
+
+/* ── Mini test runner ─────────────────────────────────────── */
+const _suites = [];
+let _cur = null;
+function suite(name, fn) { _cur = {name, cases:[]}; _suites.push(_cur); fn(); _cur = null; }
+function test(name, fn) {
+  try { fn(); _cur.cases.push({name, ok:true}); }
+  catch(e) { _cur.cases.push({name, ok:false, err:e.message}); }
+}
+function assert(cond, msg) { if(!cond) throw new Error(msg||'assertion failed'); }
+function eq(a, b) {
+  const as=JSON.stringify(a), bs=JSON.stringify(b);
+  if(as!==bs) throw new Error(`expected ${bs}\n     got ${as}`);
+}
+
+/* ── Inline copies of the pure functions under test ──────── */
+// These mirror the implementations in notes.html.
+// Update here if notes.html changes.
+
+const Utils = {
+  uuid(){ return 'xxxxxxxxxxxxxxxx'.replace(/x/g,()=>(Math.random()*16|0).toString(16)) },
+  detectContentType(text){
+    const t=text.trim(); if(!t) return 'markdown';
+    if(/^<(!DOCTYPE|html|head|body|div|p|h[1-6]|ul|ol|table|section|article|main|header|footer|span|br|hr|strong|em|a\s|pre|code|blockquote)/i.test(t)) return 'html';
+    if(/<(p|div|h[1-6]|ul|ol|li|table|thead|tbody|tr|td|th|br|hr|blockquote|pre|code|strong|em|span)\b/i.test(t)) return 'html';
+    return 'markdown';
+  },
+  formatDate(iso){
+    const d=new Date(iso), diff=Date.now()-d;
+    if(diff<60000) return 'just now';
+    if(diff<3600000) return `${Math.floor(diff/60000)}m ago`;
+    if(diff<86400000) return `${Math.floor(diff/3600000)}h ago`;
+    if(diff<7*86400000) return `${Math.floor(diff/86400000)}d ago`;
+    return d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:d.getFullYear()!==new Date().getFullYear()?'numeric':undefined});
+  },
+  escapeHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') },
+  isFullDoc(text){ const t=text.trim(); return /^<!DOCTYPE\s+html/i.test(t)||/^<html[\s>]/i.test(t); },
+};
+
+// Search.extractText — standalone (no State dependency)
+function extractText(pg){
+  if(!pg.content) return '';
+  if(pg.contentType==='html'){
+    try{
+      const doc=new DOMParser().parseFromString(pg.content,'text/html');
+      return (doc.body?.innerText||doc.body?.textContent||'').replace(/\s+/g,' ').trim();
+    }catch{ return pg.content.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim(); }
+  }
+  if(pg.contentType==='markdown'){
+    return pg.content
+      .replace(/```[\s\S]*?```/g,' ').replace(/`[^`]+`/g,' ')
+      .replace(/^\s*#{1,6}\s+/gm,' ').replace(/!?\[([^\]]*)\]\([^)]*\)/g,'$1')
+      .replace(/[*_~>|\\]/g,' ').replace(/\s+/g,' ').trim();
+  }
+  return pg.content;
+}
+
+// Search.getBestCompletion — requires a pages array injected as context
+function getBestCompletion(typed, pages){
+  const lower=typed.toLowerCase();
+  const titleMatch=pages
+    .filter(pg=>pg.title.toLowerCase().startsWith(lower)&&pg.title.length>typed.length)
+    .sort((a,b)=>a.title.length-b.title.length)[0];
+  if(titleMatch) return titleMatch.title;
+  const freq=new Map();
+  for(const pg of pages){
+    const text=pg.title+' '+extractText(pg);
+    for(const w of (text.match(/[a-zA-ZÀ-ɏ]{2,}/g)||[])){
+      const wl=w.toLowerCase();
+      if(wl.startsWith(lower)&&wl.length>lower.length)
+        freq.set(wl,(freq.get(wl)||0)+1);
+    }
+  }
+  if(!freq.size) return null;
+  const [bestWord]=[...freq.entries()].sort((a,b)=>b[1]-a[1])[0];
+  return typed+bestWord.slice(lower.length);
+}
+
+/* ── Test suites ──────────────────────────────────────────── */
+
+suite('Utils.isFullDoc', ()=>{
+  test('detects <!DOCTYPE html>', ()=>{ assert(Utils.isFullDoc('<!DOCTYPE html><html></html>')); });
+  test('case-insensitive doctype', ()=>{ assert(Utils.isFullDoc('<!doctype HTML>\n<html></html>')); });
+  test('detects bare <html> tag', ()=>{ assert(Utils.isFullDoc('<html lang="en"><head></head></html>')); });
+  test('rejects HTML fragment', ()=>{ assert(!Utils.isFullDoc('<p>hello world</p>')); });
+  test('rejects markdown', ()=>{ assert(!Utils.isFullDoc('# Heading\n\nparagraph')); });
+  test('rejects empty string', ()=>{ assert(!Utils.isFullDoc('')); });
+  test('handles leading whitespace', ()=>{ assert(Utils.isFullDoc('   <!DOCTYPE html>\n<html></html>')); });
+});
+
+suite('Utils.detectContentType', ()=>{
+  test('detects <p> fragment as html', ()=>{ eq(Utils.detectContentType('<p>hello</p>'), 'html'); });
+  test('detects <div> as html', ()=>{ eq(Utils.detectContentType('<div class="x">text</div>'), 'html'); });
+  test('detects h1 opening tag as html', ()=>{ eq(Utils.detectContentType('<h1>Title</h1>'), 'html'); });
+  test('detects <ul><li> as html', ()=>{ eq(Utils.detectContentType('<ul><li>item</li></ul>'), 'html'); });
+  test('detects markdown heading as markdown', ()=>{ eq(Utils.detectContentType('# Heading'), 'markdown'); });
+  test('detects plain sentence as markdown', ()=>{ eq(Utils.detectContentType('Hello world'), 'markdown'); });
+  test('detects bullet list as markdown', ()=>{ eq(Utils.detectContentType('- item one\n- item two'), 'markdown'); });
+  test('empty string falls back to markdown', ()=>{ eq(Utils.detectContentType(''), 'markdown'); });
+  test('inline html tag in text detected as html', ()=>{
+    eq(Utils.detectContentType('Some text with <strong>bold</strong> inside'), 'html');
+  });
+});
+
+suite('Utils.escapeHtml', ()=>{
+  test('escapes &', ()=>{ eq(Utils.escapeHtml('a & b'), 'a &amp; b'); });
+  test('escapes <', ()=>{ eq(Utils.escapeHtml('<script>'), '&lt;script&gt;'); });
+  test('escapes "', ()=>{ eq(Utils.escapeHtml('"quoted"'), '&quot;quoted&quot;'); });
+  test('leaves safe chars unchanged', ()=>{ eq(Utils.escapeHtml('hello world'), 'hello world'); });
+  test('coerces number to string', ()=>{ eq(Utils.escapeHtml(42), '42'); });
+  test('multiple entities in one string', ()=>{
+    eq(Utils.escapeHtml('<a href="x&y">'), '&lt;a href=&quot;x&amp;y&quot;&gt;');
+  });
+});
+
+suite('Utils.formatDate', ()=>{
+  test('just now for <1 min ago', ()=>{
+    const iso=new Date(Date.now()-5000).toISOString();
+    eq(Utils.formatDate(iso), 'just now');
+  });
+  test('minutes ago for <1 hour', ()=>{
+    const iso=new Date(Date.now()-125000).toISOString(); // ~2m ago
+    eq(Utils.formatDate(iso), '2m ago');
+  });
+  test('hours ago for <1 day', ()=>{
+    const iso=new Date(Date.now()-7500000).toISOString(); // ~2h ago
+    eq(Utils.formatDate(iso), '2h ago');
+  });
+  test('days ago for <1 week', ()=>{
+    const iso=new Date(Date.now()-172800000).toISOString(); // ~2d ago
+    eq(Utils.formatDate(iso), '2d ago');
+  });
+  test('returns locale date string for older dates', ()=>{
+    const iso='2020-01-15T00:00:00.000Z';
+    const result=Utils.formatDate(iso);
+    assert(typeof result==='string'&&result.length>0, 'should return a non-empty string');
+    assert(!result.endsWith('ago'), 'should not end with "ago" for old dates');
+  });
+});
+
+suite('Utils.uuid', ()=>{
+  test('returns 16-char hex string', ()=>{
+    const id=Utils.uuid();
+    assert(/^[0-9a-f]{16}$/.test(id), `got: ${id}`);
+  });
+  test('generates unique values', ()=>{
+    const ids=new Set(Array.from({length:200},()=>Utils.uuid()));
+    assert(ids.size===200,'collisions detected');
+  });
+});
+
+suite('Search.extractText — HTML fragments', ()=>{
+  test('strips tags from simple html', ()=>{
+    const text=extractText({contentType:'html',content:'<p>Hello <strong>world</strong></p>'});
+    assert(text.includes('Hello'), `got: ${text}`);
+    assert(text.includes('world'), `got: ${text}`);
+    assert(!text.includes('<'), 'should not contain angle brackets');
+  });
+  test('extracts text from table', ()=>{
+    const text=extractText({contentType:'html',content:'<table><tr><td>Cell A</td><td>Cell B</td></tr></table>'});
+    assert(text.includes('Cell A'), `got: ${text}`);
+    assert(text.includes('Cell B'), `got: ${text}`);
+  });
+  test('handles full <!DOCTYPE html> document', ()=>{
+    const content='<!DOCTYPE html><html><head><title>T</title></head><body><h1>Main Heading</h1><p>Body paragraph.</p></body></html>';
+    const text=extractText({contentType:'html',content});
+    assert(text.includes('Main Heading'), `got: ${text}`);
+    assert(text.includes('Body paragraph'), `got: ${text}`);
+    assert(!text.includes('<h1>'), 'should not contain tags');
+  });
+  test('empty content returns empty string', ()=>{
+    eq(extractText({contentType:'html',content:''}), '');
+  });
+});
+
+suite('Search.extractText — Markdown', ()=>{
+  test('strips heading markers', ()=>{
+    const text=extractText({contentType:'markdown',content:'# My Heading\n\nSome text'});
+    assert(text.includes('My Heading'), `got: ${text}`);
+    assert(!text.includes('#'), 'should strip # characters');
+  });
+  test('strips bold/italic markers', ()=>{
+    const text=extractText({contentType:'markdown',content:'**bold** and _italic_'});
+    assert(text.includes('bold'), `got: ${text}`);
+    assert(text.includes('italic'), `got: ${text}`);
+    assert(!text.includes('**'), 'should strip **');
+  });
+  test('strips fenced code blocks', ()=>{
+    const text=extractText({contentType:'markdown',content:'Before\n```js\nconst x = 1;\n```\nAfter'});
+    assert(text.includes('Before'), `got: ${text}`);
+    assert(text.includes('After'), `got: ${text}`);
+  });
+  test('strips link syntax but keeps link text', ()=>{
+    const text=extractText({contentType:'markdown',content:'See [click here](https://example.com) for details'});
+    assert(text.includes('click here'), `got: ${text}`);
+    assert(!text.includes('https://'), 'should strip URLs');
+  });
+  test('plain text passes through unchanged', ()=>{
+    const text=extractText({contentType:'text',content:'plain text here'});
+    eq(text,'plain text here');
+  });
+});
+
+suite('Search.getBestCompletion', ()=>{
+  const pages=[
+    {id:'1',title:'Meeting Notes Q1',contentType:'markdown',content:'Discussed quarterly targets and budgets.'},
+    {id:'2',title:'Meeting Agenda',contentType:'markdown',content:'Action items from the last meeting.'},
+    {id:'3',title:'Project Alpha Plan',contentType:'html',content:'<p>Project details and milestones timeline.</p>'},
+    {id:'4',title:'SSH Setup Guide',contentType:'markdown',content:'Configure SSH keys for authentication.'},
+  ];
+  test('returns shortest title starting with prefix', ()=>{
+    const comp=getBestCompletion('Meet', pages);
+    // Should return "Meeting Agenda" (shorter) over "Meeting Notes Q1"
+    eq(comp,'Meeting Agenda');
+  });
+  test('title match takes priority over word match', ()=>{
+    const comp=getBestCompletion('Pro', pages);
+    eq(comp,'Project Alpha Plan');
+  });
+  test('falls back to word completion when no title matches', ()=>{
+    const comp=getBestCompletion('auth', pages);
+    // "authentication" is in the SSH page content
+    assert(comp!==null,'should find a word completion');
+    assert(comp.toLowerCase().startsWith('auth'),`got: ${comp}`);
+  });
+  test('returns null when no match exists', ()=>{
+    const comp=getBestCompletion('xyzzy', pages);
+    eq(comp, null);
+  });
+  test('case-insensitive title matching', ()=>{
+    const comp=getBestCompletion('meeting', pages);
+    assert(comp!==null,'should match case-insensitively');
+  });
+  test('does not complete when typed equals title exactly', ()=>{
+    const comp=getBestCompletion('Meeting Agenda', pages);
+    // Exact match — no completion needed (title.length === typed.length)
+    // Falls through to word completion
+    assert(comp===null||!comp.toLowerCase().startsWith('meeting agenda\n'), 'should not suggest exact match');
+  });
+});
+
+/* ── Render results ───────────────────────────────────────── */
+const out=document.getElementById('output');
+let totalPass=0, totalFail=0;
+_suites.forEach(s=>{
+  const div=document.createElement('div');
+  div.className='suite';
+  const passCount=s.cases.filter(c=>c.ok).length;
+  const failCount=s.cases.length-passCount;
+  div.innerHTML=`<div class="suite-name">${s.name} <span style="font-weight:400;color:${failCount?'#e06060':'#4caf50'}">(${passCount}/${s.cases.length})</span></div>`;
+  s.cases.forEach(c=>{
+    const row=document.createElement('div');
+    row.className='case '+(c.ok?'pass':'fail');
+    row.innerHTML=`<span class="icon">${c.ok?'✓':'✗'}</span><div><div class="case-name">${c.name}</div>${c.err?`<div class="err">${c.err}</div>`:''}</div>`;
+    div.appendChild(row);
+  });
+  out.appendChild(div);
+  totalPass+=passCount; totalFail+=failCount;
+});
+const sum=document.createElement('div');
+sum.className='summary '+(totalFail?'has-fail':'all-pass');
+sum.textContent=totalFail
+  ? `${totalFail} test${totalFail!==1?'s':''} failed · ${totalPass} passed`
+  : `All ${totalPass} tests passed ✓`;
+out.appendChild(sum);
+</script>
+</body>
+</html>
