@@ -183,13 +183,18 @@ Best if you want notes written to real files on disk.
 
 > Requires Python (`python --version` to check it's installed).
 
-**Step 1** — Clone the repo into `Documents\folio`
+Two separate locations are involved:
+
+| What | Where |
+|---|---|
+| **App files** (`notes.html`, script) | Anywhere — e.g. `Documents\folio` |
+| **Data files** (`notebooks.json`, `pages.json`) | Wherever you link inside the app — recommended: `Documents\folio-data` |
+
+**Step 1** — Clone the repo to a Windows folder (not WSL)
 
 ```powershell
 git clone https://github.com/rayjim/folio.git "$env:USERPROFILE\Documents\folio"
 ```
-
-The included `folio-start.ps1` defaults to `Documents\folio`. To use a different location, open the script and change the `$folioDir` line.
 
 **Step 2** — Register in Task Scheduler
 
@@ -201,7 +206,13 @@ The included `folio-start.ps1` defaults to `Documents\folio`. To use a different
    - Arguments: `-WindowStyle Hidden -ExecutionPolicy Bypass -File "%USERPROFILE%\Documents\folio\folio-start.ps1"`
 5. Check **Run with highest privileges** → Finish
 
-On every login, Folio starts a background server and opens `http://localhost:8080/notes.html` in your browser. Link `Documents\folio` as your data folder inside the app (📁 button) for full file sync.
+**Step 3** — Link your data folder (first launch only)
+
+1. Click the 📁 button in the top-right
+2. Click **Change…** and pick `Documents\folio-data` (create it first if needed)
+3. Click **Save to Folder** once to write the initial files
+
+From then on, Folio auto-saves your notes to that folder every 60 seconds.
 
 ---
 

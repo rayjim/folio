@@ -1,25 +1,13 @@
 # Folio startup script
-# Default location: Documents\folio
-# To use a different folder, change $folioDir below.
+# Serves notes.html from the folder this script lives in.
+# Data files (notebooks.json, pages.json, state.json) are saved wherever
+# you link inside the app (📁 button). Recommended: Documents\folio-data
 
-$folioDir = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'folio'
-
-# Ensure the folio folder exists
-if (-not (Test-Path $folioDir)) {
-    New-Item -ItemType Directory -Path $folioDir | Out-Null
-}
-
-# Copy notes.html into the folio folder if it isn't there yet
-$notesFile = Join-Path $folioDir 'notes.html'
-$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$source    = Join-Path $scriptDir 'notes.html'
-if (-not (Test-Path $notesFile)) {
-    Copy-Item $source $notesFile
-}
+$appDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 # Start the local server in the background (hidden window)
 Start-Process -FilePath "python" `
-    -ArgumentList "-m http.server 8080 --directory `"$folioDir`"" `
+    -ArgumentList "-m http.server 8080 --directory `"$appDir`"" `
     -WindowStyle Hidden
 
 # Brief pause to let the server come up
