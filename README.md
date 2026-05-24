@@ -181,27 +181,27 @@ Folio will open in your browser on every login. All data persists in `localStora
 
 Best if you want notes written to real files on disk.
 
-**Step 1** — Save the following as `folio-start.ps1` inside your folio folder:
+> Requires Python (`python --version` to check it's installed).
+
+**Step 1** — Clone the repo into `Documents\folio`
 
 ```powershell
-$folio = "$PSScriptRoot"
-Start-Process -FilePath "python" -ArgumentList "-m http.server 8080 --directory `"$folio`"" -WindowStyle Hidden
-Start-Sleep -Seconds 1
-Start-Process "http://localhost:8080/notes.html"
+git clone https://github.com/rayjim/folio.git "$env:USERPROFILE\Documents\folio"
 ```
 
-> Requires Python to be installed (`python --version` to check). If unavailable, replace `python` with `node` and the argument with `node -e "require('http').createServer(...)"` or use any static file server.
+The included `folio-start.ps1` defaults to `Documents\folio`. To use a different location, open the script and change the `$folioDir` line.
 
-**Step 2** — Register it in Task Scheduler:
+**Step 2** — Register in Task Scheduler
 
 1. Open **Task Scheduler** → **Create Basic Task…**
-2. **Trigger:** At log on
-3. **Action:** Start a program
+2. **Name:** `Folio`
+3. **Trigger:** At log on
+4. **Action:** Start a program
    - Program: `powershell.exe`
-   - Arguments: `-WindowStyle Hidden -File "C:\path\to\folio\folio-start.ps1"`
-4. Check **Run with highest privileges** → Finish
+   - Arguments: `-WindowStyle Hidden -ExecutionPolicy Bypass -File "%USERPROFILE%\Documents\folio\folio-start.ps1"`
+5. Check **Run with highest privileges** → Finish
 
-Folio will start a background server and open `http://localhost:8080/notes.html` on every login. Folder sync works normally.
+On every login, Folio starts a background server and opens `http://localhost:8080/notes.html` in your browser. Link `Documents\folio` as your data folder inside the app (📁 button) for full file sync.
 
 ---
 
