@@ -462,11 +462,15 @@ const FileStore = {
 
   async pickData(){
     const h=await window.showDirectoryPicker({mode:'readwrite'});
-    await this._put('data',h); this._dataDir=h; return h;
+    this._dataDir=h; // set immediately so this session works even if IDB storage fails
+    try{ await this._put('data',h); }catch(e){ console.warn('FileStore: could not persist data handle',e); }
+    return h;
   },
   async pickAttach(){
     const h=await window.showDirectoryPicker({mode:'readwrite'});
-    await this._put('attach',h); this._attachDir=h; return h;
+    this._attachDir=h;
+    try{ await this._put('attach',h); }catch(e){ console.warn('FileStore: could not persist attach handle',e); }
+    return h;
   },
 
   async save(){
@@ -1129,6 +1133,8 @@ const StorageUI = {
     const apiNote=document.getElementById('stor-api-note');
     if(!('showDirectoryPicker' in window)){
       apiNote.innerHTML='⚠ <strong>File System Access API not supported</strong> — use Chrome or Edge for folder sync.';
+    } else if(location.protocol==='file:'){
+      apiNote.innerHTML='⚠ <strong>Opened as file://</strong> — folder links work this session but won\'t survive a reload (browser blocks IndexedDB handle storage for local files). For full persistence, run a local server: <code>python3 -m http.server 8080</code>';
     } else { apiNote.textContent=''; }
     const dp=document.getElementById('stor-data-path');
     const dn=FileStore.dataName();
