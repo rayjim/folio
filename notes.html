@@ -131,6 +131,8 @@ button{font-family:var(--font-ui);cursor:pointer}
 #page-title-input{width:100%;font-size:19px;font-weight:600;background:none;border:none;outline:none;color:var(--text-pri);font-family:var(--font-ui)}
 #page-title-input::placeholder{color:var(--text-dim)}
 #page-meta{font-size:11px;color:var(--text-dim);margin-top:3px}
+#btn-copy-link{background:none;border:none;cursor:pointer;font-size:15px;opacity:.35;padding:2px 4px;border-radius:4px;flex-shrink:0;transition:opacity .15s}
+#btn-copy-link:hover{opacity:1;background:var(--bg-hover)}
 /* Toolbar */
 #toolbar{display:flex;align-items:center;padding:5px 10px;background:var(--bg-toolbar);border-bottom:1px solid var(--border);flex-shrink:0;gap:2px;flex-wrap:wrap}
 .tb-group{display:flex;align-items:center;gap:2px}
@@ -299,7 +301,10 @@ button{font-family:var(--font-ui);cursor:pointer}
   <div id="content-area">
     <div id="page-view" style="display:none">
       <div id="page-header">
-        <input id="page-title-input" type="text" placeholder="Untitled Page" spellcheck="false">
+        <div style="display:flex;align-items:center;gap:8px">
+          <input id="page-title-input" type="text" placeholder="Untitled Page" spellcheck="false" style="flex:1;min-width:0">
+          <button id="btn-copy-link" title="Copy link to this page">🔗</button>
+        </div>
         <div id="page-meta"></div>
       </div>
       <div id="toolbar">
@@ -404,6 +409,7 @@ button{font-family:var(--font-ui);cursor:pointer}
 <div id="ctx-menu">
   <div class="ctx-item" data-action="rename">Rename…</div>
   <div class="ctx-item" data-action="add-sub">Add Sub-page</div>
+  <div class="ctx-item" data-action="copy-link">🔗 Copy Link</div>
   <div class="ctx-sep"></div>
   <div class="ctx-item" data-action="indent">Indent →</div>
   <div class="ctx-item" data-action="unindent">← Unindent</div>
@@ -875,6 +881,7 @@ const Editor = {
     const pv=document.getElementById('page-view'), nps=document.getElementById('no-page-state');
     if(!pg){ pv.style.display='none'; nps.style.display='flex'; return; }
     pv.style.display='flex'; nps.style.display='none';
+    history.replaceState(null,'','#page='+pg.id);
     document.getElementById('page-title-input').value=pg.title;
     this._refreshMeta(pg); this._refreshBadge(pg.contentType);
     document.getElementById('source-view').value=pg.content;
@@ -1498,6 +1505,7 @@ const CtxMenu = {
   hide(){ document.getElementById('ctx-menu').classList.remove('open'); this._target=null; },
   handle(action){
     const pg=this._target; this.hide(); if(!pg) return;
+    if(action==='copy-link'){ copyPageLink(pg.id); return; }
     if(action==='rename'){
       const name=prompt('Rename page:',pg.title);
       if(name?.trim()){
@@ -1523,6 +1531,21 @@ const CtxMenu = {
 };
 
 /* ============================================================ NOTEBOOK CONTEXT MENU */
+function pageLink(pageId){
+  const url=new URL(location.href);
+  url.hash='page='+pageId;
+  return url.toString();
+}
+function copyPageLink(pageId){
+  navigator.clipboard.writeText(pageLink(pageId)).then(()=>{
+    const el=document.getElementById('save-indicator');
+    if(!el) return;
+    el.textContent='Link copied!'; el.classList.add('show');
+    clearTimeout(_saveIndTimer);
+    _saveIndTimer=setTimeout(()=>el.classList.remove('show'),2000);
+  });
+}
+
 let _saveIndTimer=null;
 function flashSaved(){
   const el=document.getElementById('save-indicator');
@@ -1610,6 +1633,23 @@ document.addEventListener('DOMContentLoaded',async()=>{
 
   // Font size
   document.getElementById('font-size-sel').addEventListener('change',e=>FontSize.apply(e.target.value));
+
+  // Copy link button in page header
+  document.getElementById('btn-copy-link').addEventListener('click',()=>{
+    if(State.activePageId) copyPageLink(State.activePageId);
+  });
+
+  // Navigate to page from URL hash on load
+  const hashMatch=location.hash.match(/^#page=(.+)$/);
+  if(hashMatch){
+    const targetId=hashMatch[1];
+    const pg=State.pages.find(p=>p.id===targetId);
+    if(pg){
+      State.activeNotebookId=pg.notebookId;
+      State.activePageId=pg.id;
+      State.flush();
+    }
+  }
 
   // Add notebook
   document.getElementById('btn-add-nb').addEventListener('click',()=>{
