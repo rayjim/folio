@@ -13,7 +13,8 @@ Open `notes.html` directly in Chrome or Edge. All data is stored in your browser
 | Feature | Details |
 |---|---|
 | **Notebooks** | Multiple notebooks, each with its own page tree |
-| **Page tree** | 2-level hierarchy (root pages + sub-pages) |
+| **Page tree** | Up to 4 levels deep (depth 0–3); drag to reorder and re-nest |
+| **Indent / Unindent** | Drag pages to change nesting, or use right-click → Indent / Unindent |
 | **HTML rendering** | Full `<!DOCTYPE html>` docs rendered in sandboxed iframes; HTML fragments rendered with DOMPurify |
 | **Markdown rendering** | GitHub-flavored Markdown via marked.js; syntax highlighting via highlight.js |
 | **Auto-detect** | Content type (HTML vs Markdown) detected automatically on paste |
@@ -24,8 +25,13 @@ Open `notes.html` directly in Chrome or Edge. All data is stored in your browser
 | **Font size selector** | Small / Normal / Large / XL |
 | **Light / dark theme** | Toggle with the 🌙 button; persists across sessions |
 | **Folder sync** | Link a local folder via the File System Access API — writes `notebooks.json`, `pages.json`, `state.json` |
+| **File attachments** | Attach any file via 📎 button, drag-and-drop, or Ctrl+V paste; images paste inline |
+| **Page deep-links** | 🔗 button copies a direct URL to any page; URL hash updates on navigation |
+| **Live sync** | Same-browser tabs sync instantly via `StorageEvent`; cross-browser sync via 3 s file polling on linked folder |
+| **Notebook archive** | × button opens Archive / Delete Permanently dialog — archived notebooks are hidden but fully recoverable |
+| **Notebook reorder** | Right-click tab → Move Left / Move Right |
 | **Export** | Per-page clean HTML download |
-| **Auto-save** | 1.2 s debounce; also saves on page switch and browser unload |
+| **Auto-save** | 1.2 s debounce on edits; every structural change saves immediately; 5-minute safety-net flush |
 
 ---
 
@@ -75,10 +81,60 @@ Click the 📁 button in the top-right to open the storage panel.
 - **Save to Folder** — manually flush to the linked folder
 - **Load from Folder** — reload from the folder (useful after editing files externally)
 - **Export All (JSON)** — downloads a single JSON backup regardless of folder link
+- **Default Data Folder Path** — set the suggested path shown when first linking a folder
 
 On startup the app automatically loads from the linked folder if one was previously chosen and permission is still granted.
 
 > **Note**: The File System Access API requires Chrome or Edge on a server (`http://`) origin. Firefox does not support it.
+
+---
+
+## Live Sync
+
+Folio keeps multiple open instances in sync automatically:
+
+| Scenario | Mechanism |
+|---|---|
+| Multiple tabs / windows in the same browser | `localStorage StorageEvent` — updates within ~150 ms |
+| Chrome + Edge open simultaneously on the same PC | File polling — checks the linked folder every 3 s for changes made by another browser |
+
+Both browsers must link the **same folder** for cross-browser sync to work. A **"Synced ↓"** flash appears in the tab bar when an external change is loaded.
+
+---
+
+## File Attachments
+
+Attach files to any page via:
+
+- **📎 Attach** button in the toolbar — opens a file picker
+- **Drag and drop** any file onto the editor area
+- **Ctrl+V** paste — images embed inline in the content; other files appear in the attachment bar
+
+Attached files are saved to the linked attachments/data folder. Without a linked folder, files under 2 MB are stored as base64 in `localStorage`.
+
+---
+
+## Page Deep-Links
+
+Every page has a unique URL: `http://localhost:8080/notes.html#page=<pageId>`
+
+- Click the **🔗** button next to the page title to copy the link
+- Or right-click any page in the sidebar → **🔗 Copy Link**
+- Paste the link into OneNote, a browser bookmark, or anywhere — clicking it opens Folio and jumps directly to that page
+
+---
+
+## Notebook Protection
+
+Clicking **×** on a notebook tab (or right-click → Delete) opens a dialog with three options:
+
+| Option | Effect |
+|---|---|
+| **Archive** | Hides the notebook from the tab bar; all pages remain intact and recoverable |
+| **Delete Permanently** | Requires a second confirmation; removes all pages and attachments |
+| **Cancel** | Does nothing |
+
+Archived notebooks appear under the **🗄 Archived (N)** button in the tab bar. Click **Restore** to bring one back, or 🗑 to permanently delete it.
 
 ---
 
@@ -91,17 +147,22 @@ Everything lives in a single file: **`notes.html`**
 | `Utils` | Pure helpers: uuid, debounce, content-type detection, HTML escaping, date formatting |
 | `Storage` | `localStorage` read/write |
 | `FileStore` | File System Access API — directory handle persistence via IndexedDB |
+| `AttachStore` | File attachment storage — folder write or localStorage base64 fallback |
+| `FilePoller` | 3 s polling of linked folder to detect external changes (cross-browser sync) |
 | `State` | In-memory app state; `flush()` writes to both localStorage and FileStore |
-| `Notebooks` | CRUD for notebook objects |
-| `Pages` | CRUD + tree operations (move, collapse, children) |
+| `Notebooks` | CRUD + archive / restore / permanent-delete for notebook objects |
+| `Pages` | CRUD + tree operations (move, indent, unindent, collapse, drag-and-drop) |
 | `Editor` | Render, highlight, save, toolbar actions, view-mode toggle |
 | `Search` | Text extraction (DOMParser), inline autocomplete, full-text search, in-page highlight on navigate |
 | `Export` | Per-page clean HTML download |
 | `Theme` / `FontSize` | UI preference application |
 | `StorageUI` | Storage modal state |
 | `ColorPicker` | Floating color palette |
-| `UI` | Tab bar and sidebar rendering |
-| `CtxMenu` | Right-click context menu |
+| `AttachUI` | Attachment bar rendering, file embed/save logic |
+| `UI` | Tab bar and sidebar rendering, drag-and-drop, archived panel |
+| `CtxMenu` | Right-click context menu (pages) |
+| `NbCtxMenu` | Right-click context menu (notebook tabs) |
+| `NbDeleteDialog` | Archive / Delete Permanently confirmation modal |
 
 ---
 
@@ -132,7 +193,14 @@ Tests are written in vanilla JS with no external test framework dependency.
 
 ### Notebook
 ```json
-{ "id": "nb_...", "name": "Work", "order": 0, "createdAt": "ISO8601" }
+{
+  "id": "nb_...",
+  "name": "Work",
+  "order": 0,
+  "archived": false,
+  "archivedAt": null,
+  "createdAt": "ISO8601"
+}
 ```
 
 ### Page
@@ -146,13 +214,25 @@ Tests are written in vanilla JS with no external test framework dependency.
   "contentType": "html",
   "order": 0,
   "collapsed": false,
+  "attachments": [],
   "createdAt": "ISO8601",
   "modifiedAt": "ISO8601"
 }
 ```
 
-`parentId: null` = root page. Set to another page's `id` for a sub-page (max depth: 2).  
+`parentId: null` = root page. Set to another page's `id` for a sub-page (max depth: 3, i.e. 4 levels).  
 `contentType`: `"html"` | `"markdown"` | `"text"` — auto-detected on paste, manually overridable via the badge in the toolbar.
+
+### Attachment (inside `page.attachments[]`)
+```json
+{
+  "id": "att_...",
+  "name": "report.pdf",
+  "size": 204800,
+  "type": "application/pdf",
+  "addedAt": "ISO8601"
+}
+```
 
 ### localStorage keys
 
@@ -161,6 +241,8 @@ Tests are written in vanilla JS with no external test framework dependency.
 | `folio_v1_nb` | JSON array of Notebook objects |
 | `folio_v1_pg` | JSON array of Page objects |
 | `folio_v1_st` | JSON object — active selections, theme, font size |
+| `folio_v1_att_<id>` | Base64 file content for attachments without a linked folder |
+| `folio_v1_default_path` | Default data folder path shown in storage settings |
 
 ---
 
@@ -212,7 +294,7 @@ git clone https://github.com/rayjim/folio.git "$env:USERPROFILE\Documents\folio"
 2. Click **Change…** and pick `Documents\folio-data` (create it first if needed)
 3. Click **Save to Folder** once to write the initial files
 
-From then on, Folio auto-saves your notes to that folder every 60 seconds.
+From then on, Folio auto-saves your notes to that folder on every change.
 
 ---
 
