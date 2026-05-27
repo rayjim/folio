@@ -733,6 +733,7 @@ const State = {
     const pg=Pages.create(nb.id,null,'Welcome to Folio');
     pg.content=`<h1>Welcome to Folio</h1>
 <p>Your personal note-taking app — built to render AI-generated HTML and Markdown beautifully.</p>
+
 <h2>Quick Start</h2>
 <ul>
   <li>Create <strong>notebooks</strong> with the <em>＋ Notebook</em> button above</li>
@@ -742,6 +743,17 @@ const State = {
   <li>Adjust font size with the size selector in the toolbar</li>
   <li>Switch light/dark theme with the 🌙 button in the top-right</li>
 </ul>
+
+<h2>What's New — v2026.05.27</h2>
+<ul>
+  <li>🗄 <strong>Notebook archive</strong> — clicking × now opens Archive / Delete Permanently / Cancel. Archived notebooks are hidden but fully recoverable from the 🗄 panel.</li>
+  <li>📎 <strong>File attachments</strong> — attach any file via the 📎 button, drag-and-drop, or Ctrl+V paste. Images embed inline; other files appear in the attachment bar below the editor.</li>
+  <li>🔗 <strong>Page deep-links</strong> — click 🔗 next to any page title to copy a direct URL. Paste it into OneNote, a browser bookmark, or anywhere to jump straight back to that page.</li>
+  <li>🔄 <strong>Live sync</strong> — open Folio in multiple tabs or browsers and edits sync automatically. Same browser: instant via localStorage. Different browsers (Chrome + Edge): via 3-second folder polling.</li>
+  <li>📓 <strong>Notebook reorder</strong> — right-click any notebook tab to Move Left, Move Right, Rename, or Delete.</li>
+  <li>🌲 <strong>Multi-level page tree</strong> — nest pages up to 4 levels deep. Drag to reorder and re-nest, or use right-click → Indent / Unindent.</li>
+</ul>
+
 <h2>Keyboard Shortcuts</h2>
 <table>
   <thead><tr><th>Shortcut</th><th>Action</th></tr></thead>
@@ -755,12 +767,14 @@ const State = {
     <tr><td><kbd>Esc</kbd></td><td>Close search / menus</td></tr>
   </tbody>
 </table>
+
 <h2>Tips</h2>
 <ul>
   <li>Double-click the rendered view to switch to source editing</li>
   <li>Double-click a notebook tab to rename it</li>
-  <li>Right-click any sidebar page for options: rename, sub-page, move, delete</li>
+  <li>Right-click any sidebar page for options: rename, indent, move, copy link, delete</li>
   <li>Click the <strong>MD / HTML</strong> badge to manually override the content type</li>
+  <li>Link a local folder via 📁 to save notes as real files — required for live sync across browsers</li>
 </ul>
 <blockquote><p>Paste any AI-generated HTML or Markdown and it renders immediately. The content type is detected automatically — no need to specify it.</p></blockquote>`;
     pg.contentType='html';
