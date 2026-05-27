@@ -150,6 +150,19 @@ button{font-family:var(--font-ui);cursor:pointer}
 #type-badge.html{background:rgba(224,128,78,.12);color:#e08050;border-color:rgba(224,128,78,.3)}
 #type-badge.markdown{background:var(--accent2);color:var(--accent);border-color:rgba(78,157,224,.3)}
 #type-badge.text{background:rgba(136,136,136,.1);color:var(--text-sec);border-color:var(--border2)}
+/* Attachments */
+#attach-bar{padding:0 22px;background:var(--bg-toolbar);flex-shrink:0;display:flex;flex-wrap:wrap;gap:6px;max-height:0;overflow:hidden;transition:max-height .2s,padding .2s}
+#attach-bar.has-items{max-height:200px;padding:8px 22px;border-top:1px solid var(--border)}
+.att-item{display:flex;align-items:center;gap:5px;background:var(--bg-overlay);border:1px solid var(--border2);border-radius:4px;padding:3px 8px;font-size:12px;max-width:280px}
+.att-icon{font-size:14px;flex-shrink:0}
+.att-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-pri);cursor:pointer}
+.att-name:hover{color:var(--accent);text-decoration:underline}
+.att-size{color:var(--text-dim);font-size:11px;white-space:nowrap;flex-shrink:0}
+.att-del{background:none;border:none;cursor:pointer;color:var(--text-dim);font-size:13px;padding:0 2px;line-height:1;flex-shrink:0}
+.att-del:hover{color:#e06060}
+#editor-pane{position:relative}
+#drop-overlay{display:none;position:absolute;inset:0;background:rgba(74,158,255,.1);border:2px dashed #4a9eff;border-radius:4px;align-items:center;justify-content:center;font-size:15px;color:#4a9eff;pointer-events:none;z-index:10}
+#editor-pane.drag-over #drop-overlay{display:flex}
 /* Color palette */
 #color-palette{position:fixed;display:none;background:var(--bg-overlay);border:1px solid var(--border2);border-radius:6px;padding:8px;box-shadow:0 4px 16px rgba(0,0,0,.4);z-index:500;gap:8px;flex-direction:column}
 #color-palette.open{display:flex}
@@ -331,12 +344,16 @@ button{font-family:var(--font-ui);cursor:pointer}
           <span id="type-badge" class="markdown" title="Click to cycle content type">MD</span>
           <button class="tb-btn" id="tb-view"   title="Toggle source/rendered (Ctrl+/)">Rendered</button>
           <button class="tb-btn" id="tb-export" title="Export page as HTML">Export ↓</button>
+          <button class="tb-btn" id="tb-attach" title="Attach file — or drag & drop / paste files here">📎 Attach</button>
         </div>
       </div>
       <div id="editor-pane">
         <textarea id="source-view"  placeholder="Paste HTML or Markdown — auto-detected on paste.&#10;&#10;Double-click the rendered view to edit source."></textarea>
         <div     id="rendered-view" class="active"></div>
+        <div id="drop-overlay">Drop files to attach</div>
       </div>
+      <div id="attach-bar"></div>
+      <input type="file" id="attach-input" multiple style="display:none">
     </div>
     <div id="no-page-state">
       <div class="nps-icon">📝</div>
@@ -456,7 +473,7 @@ const Utils = {
 
 /* ============================================================ STORAGE */
 const MAX_DEPTH = 3; // max nesting depth (0 = root, 3 = deepest allowed)
-const KEYS = { notebooks:'folio_v1_nb', pages:'folio_v1_pg', state:'folio_v1_st', defaultPath:'folio_v1_default_path' };
+const KEYS = { notebooks:'folio_v1_nb', pages:'folio_v1_pg', state:'folio_v1_st', defaultPath:'folio_v1_default_path', attPfx:'folio_v1_att_' };
 const Storage = {
   load(k){ try{ return JSON.parse(localStorage.getItem(k))||null }catch{ return null } },
   save(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)) }catch(e){ console.warn(e) } }
@@ -587,6 +604,52 @@ const FileStore = {
   isLinked(){ return !!this._dataDir; },
 };
 
+/* ============================================================ ATTACH STORE */
+const AttachStore = {
+  _dir(){ return FileStore._attachDir||FileStore._dataDir; },
+  _fname(att){ return att.id+'_'+att.name.replace(/[^\w.\-]/g,'_'); },
+
+  async save(attId, file){
+    const dir=this._dir();
+    if(dir){
+      try{
+        if(await FileStore._perm(dir)){
+          const fh=await dir.getFileHandle(attId+'_'+file.name.replace(/[^\w.\-]/g,'_'),{create:true});
+          const ws=await fh.createWritable();
+          await ws.write(file); await ws.close();
+          return true;
+        }
+      }catch(e){ console.warn('AttachStore.save folder:',e); }
+    }
+    if(file.size>2*1024*1024) return false;
+    return new Promise(res=>{
+      const r=new FileReader();
+      r.onload=e=>{ try{ localStorage.setItem(KEYS.attPfx+attId,e.target.result); res(true); }catch{ res(false); } };
+      r.onerror=()=>res(false);
+      r.readAsDataURL(file);
+    });
+  },
+
+  async getUrl(att){
+    const dir=this._dir();
+    if(dir){
+      try{
+        if(await FileStore._perm(dir)){
+          const fh=await dir.getFileHandle(this._fname(att));
+          return URL.createObjectURL(await fh.getFile());
+        }
+      }catch{}
+    }
+    return localStorage.getItem(KEYS.attPfx+att.id)||null;
+  },
+
+  async remove(att){
+    const dir=this._dir();
+    if(dir){ try{ if(await FileStore._perm(dir)) await dir.removeEntry(this._fname(att)); }catch{} }
+    localStorage.removeItem(KEYS.attPfx+att.id);
+  }
+};
+
 /* ============================================================ FILE POLLER (cross-browser sync) */
 const FilePoller = {
   _timer:null, _ownMod:0,
@@ -709,7 +772,7 @@ const Pages = {
     parentId=parentId||null;
     const siblings=State.pages.filter(p=>p.notebookId===notebookId&&p.parentId===parentId);
     const pg={id:'pg_'+Utils.uuid(),notebookId,parentId,title:title||'Untitled Page',
-      content:'',contentType:'markdown',order:siblings.length,collapsed:false,
+      content:'',contentType:'markdown',order:siblings.length,collapsed:false,attachments:[],
       createdAt:new Date().toISOString(),modifiedAt:new Date().toISOString()};
     State.pages.push(pg); State.flush(); return pg;
   },
@@ -724,6 +787,7 @@ const Pages = {
     const descIds=this._descendants(id);
     if(!confirm(descIds.length?`Delete "${pg.title}" and its ${descIds.length} sub-page(s)?`:`Delete "${pg.title}"?`)) return false;
     const ids=new Set([id,...descIds]);
+    State.pages.filter(p=>ids.has(p.id)).forEach(p=>(p.attachments||[]).forEach(a=>AttachStore.remove(a)));
     State.pages=State.pages.filter(p=>!ids.has(p.id));
     if(ids.has(State.activePageId)){
       State.activePageId=State.pages.filter(p=>p.notebookId===pg.notebookId&&!p.parentId)[0]?.id??null;
@@ -883,6 +947,7 @@ const Editor = {
     pv.style.display='flex'; nps.style.display='none';
     history.replaceState(null,'','#page='+pg.id);
     document.getElementById('page-title-input').value=pg.title;
+    AttachUI.render(pg);
     this._refreshMeta(pg); this._refreshBadge(pg.contentType);
     document.getElementById('source-view').value=pg.content;
     this._applyViewMode(State.viewMode,pg,hlQ);
@@ -1593,6 +1658,96 @@ const NbCtxMenu = {
   }
 };
 
+/* ============================================================ ATTACH UI */
+const AttachUI = {
+  _icon(type){
+    if(type.startsWith('image/'))  return '🖼';
+    if(type==='application/pdf')   return '📄';
+    if(type.includes('word')||type.includes('document')) return '📝';
+    if(type.includes('sheet')||type.includes('excel'))   return '📊';
+    if(type.includes('zip')||type.includes('compressed'))return '🗜';
+    return '📎';
+  },
+  _fmtSize(b){ return b<1024?b+'B':b<1048576?(b/1024).toFixed(0)+'KB':(b/1048576).toFixed(1)+'MB'; },
+
+  render(pg){
+    const bar=document.getElementById('attach-bar'); if(!bar) return;
+    const atts=(pg?.attachments)||[];
+    if(!atts.length){ bar.innerHTML=''; bar.classList.remove('has-items'); return; }
+    bar.classList.add('has-items');
+    bar.innerHTML=atts.map(a=>`
+      <div class="att-item">
+        <span class="att-icon">${this._icon(a.type)}</span>
+        <span class="att-name" data-att-open="${a.id}" title="${Utils.escapeHtml(a.name)}">${Utils.escapeHtml(a.name)}</span>
+        <span class="att-size">${this._fmtSize(a.size)}</span>
+        <button class="att-del" data-att-del="${a.id}" title="Remove">✕</button>
+      </div>`).join('');
+    bar.querySelectorAll('[data-att-open]').forEach(el=>
+      el.addEventListener('click',()=>this.open(el.dataset.attOpen)));
+    bar.querySelectorAll('[data-att-del]').forEach(el=>
+      el.addEventListener('click',()=>this.remove(el.dataset.attDel)));
+  },
+
+  async addFiles(files){
+    const pg=State.activePage(); if(!pg) return;
+    if(!pg.attachments) pg.attachments=[];
+    const noFolder=!AttachStore._dir();
+    for(const file of files){
+      if(file.type.startsWith('image/')){
+        await this._embedImage(file,pg); continue;
+      }
+      if(noFolder&&file.size>2*1024*1024){
+        alert(`"${file.name}" is over 2MB. Link a data folder (📁) to store large files.`); continue;
+      }
+      const attId='att_'+Utils.uuid();
+      const ok=await AttachStore.save(attId,file);
+      if(!ok){ alert(`Could not save "${file.name}". Try linking a data folder first.`); continue; }
+      pg.attachments.push({id:attId,name:file.name,size:file.size,
+        type:file.type||'application/octet-stream',addedAt:new Date().toISOString()});
+    }
+    State.flush(); this.render(pg);
+  },
+
+  async _embedImage(file,pg){
+    return new Promise(res=>{
+      const r=new FileReader();
+      r.onload=e=>{
+        const tag=`<img src="${e.target.result}" alt="${Utils.escapeHtml(file.name)}" style="max-width:100%">`;
+        const src=document.getElementById('source-view');
+        const pos=src.selectionStart??src.value.length;
+        const before=src.value.slice(0,pos), after=src.value.slice(pos);
+        pg.content=before+(before&&!before.endsWith('\n')?'\n':'')+tag+(after&&!after.startsWith('\n')?'\n':'')+after;
+        pg.contentType='html';
+        src.value=pg.content;
+        Editor._refreshBadge('html');
+        if(State.viewMode==='rendered') Editor._applyViewMode('rendered',pg);
+        Editor._dirty=true; Editor._scheduleSave(pg);
+        res();
+      };
+      r.readAsDataURL(file);
+    });
+  },
+
+  async open(attId){
+    const pg=State.activePage();
+    const att=pg?.attachments?.find(a=>a.id===attId); if(!att) return;
+    const url=await AttachStore.getUrl(att);
+    if(!url){ alert('File not found — it may have been moved or deleted.'); return; }
+    const a=Object.assign(document.createElement('a'),{href:url,download:att.name});
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(()=>{ if(url.startsWith('blob:')) URL.revokeObjectURL(url); },5000);
+  },
+
+  async remove(attId){
+    const pg=State.activePage();
+    const att=pg?.attachments?.find(a=>a.id===attId); if(!att) return;
+    if(!confirm(`Remove "${att.name}"?`)) return;
+    await AttachStore.remove(att);
+    pg.attachments=pg.attachments.filter(a=>a.id!==attId);
+    State.flush(); this.render(pg);
+  }
+};
+
 /* ============================================================ INIT */
 document.addEventListener('DOMContentLoaded',async()=>{
   marked.setOptions({gfm:true,breaks:false});
@@ -1717,7 +1872,11 @@ document.addEventListener('DOMContentLoaded',async()=>{
   // Source textarea
   const src=document.getElementById('source-view');
   src.addEventListener('input',()=>Editor.onInput());
-  src.addEventListener('paste',()=>Editor.onPaste());
+  src.addEventListener('paste',e=>{
+    const files=[...e.clipboardData.files];
+    if(files.length){ e.preventDefault(); AttachUI.addFiles(files); return; }
+    Editor.onPaste();
+  });
   src.addEventListener('keydown',e=>{
     if(e.key==='Tab'){e.preventDefault();const s=src.selectionStart,en=src.selectionEnd;src.setRangeText('  ',s,en,'end');Editor.onInput();}
   });
@@ -1732,6 +1891,23 @@ document.addEventListener('DOMContentLoaded',async()=>{
   document.getElementById('tb-color').addEventListener('click',e=>{e.stopPropagation();ColorPicker.toggle(e.currentTarget);});
   document.getElementById('tb-view').addEventListener('click',()=>Editor.toggleViewMode());
   document.getElementById('tb-export').addEventListener('click',()=>Export.page());
+  document.getElementById('tb-attach').addEventListener('click',()=>document.getElementById('attach-input').click());
+  document.getElementById('attach-input').addEventListener('change',e=>{
+    if(e.target.files.length) AttachUI.addFiles([...e.target.files]);
+    e.target.value='';
+  });
+  const edPane=document.getElementById('editor-pane');
+  edPane.addEventListener('dragover',e=>{
+    if([...e.dataTransfer.types].includes('Files')){ e.preventDefault(); edPane.classList.add('drag-over'); }
+  });
+  edPane.addEventListener('dragleave',e=>{ if(!edPane.contains(e.relatedTarget)) edPane.classList.remove('drag-over'); });
+  edPane.addEventListener('drop',e=>{
+    edPane.classList.remove('drag-over');
+    const files=[...e.dataTransfer.files];
+    if(!files.length) return;
+    e.preventDefault();
+    AttachUI.addFiles(files);
+  });
   document.getElementById('type-badge').addEventListener('click',()=>Editor.cycleContentType());
 
   // Context menus
