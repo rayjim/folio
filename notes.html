@@ -67,6 +67,18 @@ button{font-family:var(--font-ui);cursor:pointer}
 #btn-add-nb{display:flex;align-items:center;padding:0 12px;font-size:12px;background:none;border:none;border-right:1px solid var(--border);color:var(--text-sec);flex-shrink:0}
 #btn-add-nb:hover{background:var(--bg-hover);color:var(--text-pri)}
 .tab-spacer{flex:1}
+#btn-archived{background:none;border:none;border-right:1px solid var(--border);padding:0 10px;font-size:12px;color:var(--text-dim);cursor:pointer;flex-shrink:0;white-space:nowrap}
+#btn-archived:hover{background:var(--bg-hover);color:var(--text-pri)}
+#archived-panel{position:absolute;top:var(--tabbar-h);left:0;background:var(--bg-overlay);border:1px solid var(--border2);border-radius:6px;box-shadow:0 6px 24px rgba(0,0,0,.4);z-index:500;min-width:240px;padding-bottom:6px}
+#archived-panel.hidden{display:none}
+.arch-item{display:flex;align-items:center;gap:8px;padding:6px 12px;font-size:12px}
+.arch-item:hover{background:var(--bg-hover)}
+.arch-name{flex:1;color:var(--text-pri);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.arch-date{font-size:11px;color:var(--text-dim);flex-shrink:0}
+.arch-restore{background:none;border:1px solid var(--border2);border-radius:3px;color:var(--accent);font-size:11px;padding:1px 6px;cursor:pointer}
+.arch-restore:hover{background:var(--accent);color:#fff}
+.arch-del{background:none;border:none;color:var(--text-dim);font-size:13px;cursor:pointer;padding:0 2px}
+.arch-del:hover{color:#e06060}
 #storage-btn{display:flex;align-items:center;justify-content:center;width:34px;height:100%;background:none;border:none;border-left:1px solid var(--border);font-size:14px;color:var(--text-sec);flex-shrink:0}
 #storage-btn:hover{background:var(--bg-hover)}
 #storage-dot{display:none;width:6px;height:6px;border-radius:50%;background:#4caf50;position:absolute;top:7px;right:6px}
@@ -290,9 +302,31 @@ button{font-family:var(--font-ui);cursor:pointer}
 </head>
 <body>
 
+<div id="nb-delete-modal" class="modal-bd hidden">
+  <div class="modal-card" style="width:380px">
+    <div class="modal-hdr">
+      <span id="nb-del-title">Remove notebook?</span>
+      <button class="modal-x" id="nb-del-x">✕</button>
+    </div>
+    <div class="modal-body">
+      <p id="nb-del-msg" style="font-size:13px;color:var(--text-sec);line-height:1.6"></p>
+      <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+        <button class="tb-btn" id="nb-del-cancel">Cancel</button>
+        <button class="tb-btn" id="nb-del-archive" style="color:var(--accent);border-color:var(--accent)">Archive</button>
+        <button class="tb-btn" id="nb-del-perm" style="color:#e06060;border-color:#e06060">Delete Permanently</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div id="tab-bar">
   <div id="tab-bar-notebooks"></div>
   <button id="btn-add-nb">＋ Notebook</button>
+  <button id="btn-archived" title="Archived notebooks" style="display:none">🗄 <span id="archived-count">0</span></button>
+  <div id="archived-panel" class="hidden">
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-dim);padding:8px 12px 4px">Archived Notebooks</div>
+    <div id="archived-list"></div>
+  </div>
   <div class="tab-spacer"></div>
   <span id="save-indicator"></span>
   <button id="storage-btn" title="Data storage settings">📁<span id="storage-dot"></span></button>
@@ -756,14 +790,32 @@ const Notebooks = {
     State.notebooks.push(nb); State.flush(); return nb;
   },
   rename(id,name){ const nb=State.notebook(id); if(nb){nb.name=name;State.flush()} },
-  delete(id){
+  archive(id){
     const nb=State.notebook(id); if(!nb) return false;
-    if(State.pages.some(p=>p.notebookId===id)&&!confirm(`Delete notebook "${nb.name}" and all its pages?`)) return false;
-    State.notebooks=State.notebooks.filter(n=>n.id!==id);
-    State.pages=State.pages.filter(p=>p.notebookId!==id);
-    if(State.activeNotebookId===id){ State.activeNotebookId=State.notebooks[0]?.id??null; State.activePageId=null; }
+    nb.archived=true; nb.archivedAt=new Date().toISOString();
+    if(State.activeNotebookId===id){
+      const next=State.notebooks.filter(n=>!n.archived&&n.id!==id).sort((a,b)=>a.order-b.order)[0]??null;
+      State.activeNotebookId=next?.id??null;
+      State.activePageId=next?Pages.roots(next.id)[0]?.id??null:null;
+    }
     State.flush(); return true;
   },
+  restore(id){
+    const nb=State.notebook(id); if(!nb) return false;
+    nb.archived=false; nb.archivedAt=null; State.flush(); return true;
+  },
+  deletePermanent(id){
+    const nb=State.notebook(id); if(!nb) return false;
+    State.pages.filter(p=>p.notebookId===id).forEach(p=>(p.attachments||[]).forEach(a=>AttachStore.remove(a)));
+    State.notebooks=State.notebooks.filter(n=>n.id!==id);
+    State.pages=State.pages.filter(p=>p.notebookId!==id);
+    if(State.activeNotebookId===id){
+      const next=State.notebooks.filter(n=>!n.archived).sort((a,b)=>a.order-b.order)[0]??null;
+      State.activeNotebookId=next?.id??null; State.activePageId=null;
+    }
+    State.flush(); return true;
+  },
+  delete(id){ return this.deletePermanent(id); },
 };
 
 /* ============================================================ PAGES */
@@ -1364,13 +1416,13 @@ const UI = {
 
   renderTabs(){
     const bar=document.getElementById('tab-bar-notebooks'); bar.innerHTML='';
-    const sortedNbs=[...State.notebooks].sort((a,b)=>a.order-b.order);
+    const sortedNbs=[...State.notebooks].sort((a,b)=>a.order-b.order).filter(n=>!n.archived);
     sortedNbs.forEach(nb=>{
       const el=document.createElement('div');
       el.className='tab'+(nb.id===State.activeNotebookId?' active':'');
       el.dataset.nbId=nb.id;
       el.innerHTML=`<span class="tab-name" title="${Utils.escapeHtml(nb.name)}">${Utils.escapeHtml(nb.name)}</span>
-                    <button class="tab-x" title="Delete">×</button>`;
+                    <button class="tab-x" title="Archive or delete…">×</button>`;
       el.addEventListener('click',e=>{
         if(e.target.classList.contains('tab-x')) return;
         if(nb.id===State.activeNotebookId) return;
@@ -1384,12 +1436,40 @@ const UI = {
         if(name?.trim()){Notebooks.rename(nb.id,name.trim());this.renderTabs();}
       });
       el.querySelector('.tab-x').addEventListener('click',e=>{
-        e.stopPropagation();
-        if(Notebooks.delete(nb.id)){this.renderAll();Editor.loadPage(State.activePageId);}
+        e.stopPropagation(); NbDeleteDialog.show(nb);
       });
       el.addEventListener('contextmenu',e=>{e.preventDefault();NbCtxMenu.show(e,nb);});
       bar.appendChild(el);
     });
+    // Update archived button
+    const archived=State.notebooks.filter(n=>n.archived);
+    const btn=document.getElementById('btn-archived');
+    btn.style.display=archived.length?'':'none';
+    document.getElementById('archived-count').textContent=archived.length;
+  },
+
+  renderArchived(){
+    const archived=State.notebooks.filter(n=>n.archived).sort((a,b)=>new Date(b.archivedAt)-new Date(a.archivedAt));
+    const list=document.getElementById('archived-list');
+    if(!archived.length){list.innerHTML='<div style="padding:8px 12px;font-size:12px;color:var(--text-dim)">None</div>';return;}
+    list.innerHTML=archived.map(nb=>`
+      <div class="arch-item">
+        <span class="arch-name" title="${Utils.escapeHtml(nb.name)}">📓 ${Utils.escapeHtml(nb.name)}</span>
+        <span class="arch-date">${Utils.formatDate(nb.archivedAt)}</span>
+        <button class="arch-restore" data-nb-restore="${nb.id}">Restore</button>
+        <button class="arch-del" data-nb-perm="${nb.id}" title="Delete permanently">🗑</button>
+      </div>`).join('');
+    list.querySelectorAll('[data-nb-restore]').forEach(btn=>
+      btn.addEventListener('click',()=>{
+        Notebooks.restore(btn.dataset.nbRestore);
+        UI.renderAll(); UI.renderArchived();
+      }));
+    list.querySelectorAll('[data-nb-perm]').forEach(btn=>
+      btn.addEventListener('click',()=>{
+        const nb=State.notebook(btn.dataset.nbPerm);
+        if(!nb||!confirm(`Permanently delete "${nb.name}" and ALL its pages?`)) return;
+        Notebooks.deletePermanent(nb.id); UI.renderAll(); UI.renderArchived();
+      }));
   },
 
   renderSidebar(){
@@ -1627,6 +1707,30 @@ function flashSynced(){
   _saveIndTimer=setTimeout(()=>el.classList.remove('show'),2000);
 }
 
+/* ============================================================ NOTEBOOK DELETE DIALOG */
+const NbDeleteDialog = {
+  _nb:null,
+  show(nb){
+    this._nb=nb;
+    const pageCount=State.pages.filter(p=>p.notebookId===nb.id).length;
+    document.getElementById('nb-del-title').textContent=`Remove "${nb.name}"?`;
+    document.getElementById('nb-del-msg').innerHTML=
+      `<strong>Archive</strong> hides it from the tab bar but keeps all ${pageCount} page(s) — you can restore it anytime.<br><br>`+
+      `<strong>Delete Permanently</strong> removes the notebook and all its pages forever.`;
+    document.getElementById('nb-delete-modal').classList.remove('hidden');
+  },
+  hide(){ document.getElementById('nb-delete-modal').classList.add('hidden'); this._nb=null; },
+  doArchive(){
+    const nb=this._nb; this.hide(); if(!nb) return;
+    Notebooks.archive(nb.id); UI.renderAll(); Editor.loadPage(State.activePageId);
+  },
+  doPerm(){
+    const nb=this._nb; this.hide(); if(!nb) return;
+    if(!confirm(`Permanently delete "${nb.name}" and ALL its pages? This cannot be undone.`)) return;
+    Notebooks.deletePermanent(nb.id); UI.renderAll(); Editor.loadPage(State.activePageId);
+  },
+};
+
 const NbCtxMenu = {
   _target:null,
   show(e,nb){
@@ -1653,7 +1757,7 @@ const NbCtxMenu = {
       const name=prompt('Rename notebook:',nb.name);
       if(name?.trim()){Notebooks.rename(nb.id,name.trim());UI.renderTabs();}
     } else if(action==='delete'){
-      if(Notebooks.delete(nb.id)){UI.renderAll();Editor.loadPage(State.activePageId);}
+      NbDeleteDialog.show(nb);
     }
   }
 };
@@ -1805,6 +1909,24 @@ document.addEventListener('DOMContentLoaded',async()=>{
       State.flush();
     }
   }
+
+  // Notebook delete dialog
+  document.getElementById('nb-del-x').addEventListener('click',()=>NbDeleteDialog.hide());
+  document.getElementById('nb-del-cancel').addEventListener('click',()=>NbDeleteDialog.hide());
+  document.getElementById('nb-del-archive').addEventListener('click',()=>NbDeleteDialog.doArchive());
+  document.getElementById('nb-del-perm').addEventListener('click',()=>NbDeleteDialog.doPerm());
+  document.getElementById('nb-delete-modal').addEventListener('click',e=>{
+    if(e.target===document.getElementById('nb-delete-modal')) NbDeleteDialog.hide();
+  });
+
+  // Archived notebooks panel
+  const archivedBtn=document.getElementById('btn-archived');
+  const archivedPanel=document.getElementById('archived-panel');
+  archivedBtn.addEventListener('click',e=>{
+    e.stopPropagation();
+    const hidden=archivedPanel.classList.toggle('hidden');
+    if(!hidden) UI.renderArchived();
+  });
 
   // Add notebook
   document.getElementById('btn-add-nb').addEventListener('click',()=>{
@@ -1984,6 +2106,7 @@ document.addEventListener('DOMContentLoaded',async()=>{
   document.addEventListener('click',e=>{
     if(!e.target.closest('#ctx-menu')) CtxMenu.hide();
     if(!e.target.closest('#nb-ctx-menu')) NbCtxMenu.hide();
+    if(!e.target.closest('#archived-panel')&&!e.target.closest('#btn-archived')) document.getElementById('archived-panel').classList.add('hidden');
     if(!e.target.closest('#color-palette')&&!e.target.closest('#tb-color')) ColorPicker.close();
     if(!e.target.closest('#search-wrap')) document.getElementById('search-results').classList.remove('open');
   });
@@ -1991,7 +2114,7 @@ document.addEventListener('DOMContentLoaded',async()=>{
   // Keyboard shortcuts
   document.addEventListener('keydown',e=>{
     const mod=e.ctrlKey||e.metaKey;
-    if(e.key==='Escape'){Search.close();CtxMenu.hide();NbCtxMenu.hide();ColorPicker.close();return;}
+    if(e.key==='Escape'){Search.close();CtxMenu.hide();NbCtxMenu.hide();NbDeleteDialog.hide();ColorPicker.close();document.getElementById('archived-panel').classList.add('hidden');return;}
     if(mod&&e.key==='/')   {e.preventDefault();Editor.toggleViewMode();}
     else if(mod&&e.key==='f'){e.preventDefault();si.focus();si.select();}
     else if(mod&&!e.shiftKey&&e.key==='n'){e.preventDefault();document.getElementById('btn-new-page').click();}
