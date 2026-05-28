@@ -8,6 +8,9 @@
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
 <link  id="hljs-css" rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
 <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/highlight.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16/dist/contrib/auto-render.min.js"></script>
 <style>
 /* ============================================================ VARIABLES */
 :root {
@@ -236,6 +239,10 @@ button{font-family:var(--font-ui);cursor:pointer}
 #rendered-view figure{margin:1em 0;text-align:center}
 #rendered-view figcaption{font-size:.85em;color:var(--text-sec);margin-top:.4em}
 #rendered-view abbr[title]{text-decoration:underline dotted;cursor:help}
+/* KaTeX math */
+.katex-display{overflow-x:auto;overflow-y:hidden;padding:.4em 0}
+.katex{font-size:1.1em}
+.math-err{color:#e06060;font-size:.85em}
 /* hljs overrides — work in both themes */
 #rendered-view .hljs{background:var(--c-pre-bg) !important;padding:0}
 /* No-page */
@@ -918,11 +925,48 @@ const Pages = {
 const Editor = {
   _dirty:false, _saveTimer:null, _indTimer:null,
 
+  // Scan container for $...$ and $$...$$ and render with KaTeX (HTML/text types)
+  _mathRender(container){
+    if(typeof renderMathInElement==='undefined') return;
+    renderMathInElement(container,{
+      delimiters:[
+        {left:'$$',right:'$$',display:true},
+        {left:'$',right:'$',display:false},
+        {left:'\\(',right:'\\)',display:false},
+        {left:'\\[',right:'\\]',display:true},
+      ],
+      throwOnError:false, output:'html',
+      ignoredTags:['script','noscript','style','textarea','pre','code'],
+    });
+  },
+
   render(content,type){
     if(!content) return '';
     const opts={ADD_ATTR:['style','class','target','id'],ADD_TAGS:['details','summary']};
     if(type==='html') return DOMPurify.sanitize(content,opts);
-    if(type==='markdown') return DOMPurify.sanitize(marked.parse(content),opts);
+    if(type==='markdown'){
+      // Protect math from marked.js (underscores/carets get mangled otherwise)
+      const store=[];
+      const ph=(s,d)=>{ const i=store.length; store.push({s,d}); return `<span data-math="${i}"></span>`; };
+      const src=content
+        .replace(/\$\$([\s\S]+?)\$\$/g,(_,s)=>ph(s,true))
+        .replace(/(?<!\$)\$([^\s$\n][^$\n]*?[^\s$]|[^\s$])\$(?!\$)/g,(_,s)=>ph(s,false));
+      const html=DOMPurify.sanitize(marked.parse(src),opts);
+      if(!store.length) return html;
+      const tmp=document.createElement('div');
+      tmp.innerHTML=html;
+      tmp.querySelectorAll('[data-math]').forEach(el=>{
+        const {s,d}=store[+el.dataset.math];
+        try{
+          el.replaceWith(document.createRange().createContextualFragment(
+            katex.renderToString(s,{displayMode:d,throwOnError:false,output:'html'})
+          ));
+        }catch(e){
+          el.replaceWith(Object.assign(document.createElement('code'),{className:'math-err',textContent:s}));
+        }
+      });
+      return tmp.innerHTML;
+    }
     return DOMPurify.sanitize(Utils.escapeHtml(content).replace(/\n/g,'<br>'),{ALLOWED_TAGS:['br']});
   },
 
@@ -1003,6 +1047,7 @@ const Editor = {
       container.innerHTML=this.render(content,type);
       this._highlight();
       if(hlQ) this._highlightInDom(container,hlQ);
+      if(type==='html') this._mathRender(container);
     }
   },
 
