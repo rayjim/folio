@@ -32,6 +32,7 @@ Open `notes.html` directly in Chrome or Edge. All data is stored in your browser
 | **Notebook reorder** | Right-click tab → Move Left / Move Right |
 | **Export** | Per-page clean HTML download |
 | **Auto-save** | 1.2 s debounce on edits; every structural change saves immediately; 5-minute safety-net flush |
+| **Math rendering** | KaTeX — inline (`$...$`) and display (`$$...$$`) math; also `\(...\)` and `\[...\]` LaTeX delimiters |
 
 ---
 
@@ -305,3 +306,4 @@ From then on, Folio auto-saves your notes to that folder on every change.
 | [marked](https://marked.js.org) | 9.x | Markdown → HTML |
 | [DOMPurify](https://github.com/cure53/DOMPurify) | 3.x | HTML sanitization (XSS prevention) |
 | [highlight.js](https://highlightjs.org) | 11.x | Code syntax highlighting |
+| [KaTeX](https://katex.org) | 0.16 | Math / equation rendering |

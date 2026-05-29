@@ -8,6 +8,9 @@ Versions follow `vYYYY.MM.DD` (date of release).
 
 ## [Unreleased]
 
+### Added
+- **Math / equation rendering** — KaTeX support for inline (`$...$`) and display (`$$...$$`) math. Also supports `\(...\)` and `\[...\]` LaTeX delimiters. Markdown mode pre-processes math blocks before marked.js to prevent underscore/caret mangling.
+
 ---
 
 ## [v2026.05.27] — 2026-05-27
