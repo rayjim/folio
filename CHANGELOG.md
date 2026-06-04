@@ -6,6 +6,13 @@ Versions follow `vYYYY.MM.DD` (date of release).
 
 ---
 
+## [v2026.06.04] — 2026-06-04
+
+### Added
+- **Print button** — `🖨 Print` in the toolbar opens a clean popup containing only the rendered page content (no sidebar, tabs, or toolbar) and triggers the browser print dialog. Works for both physical printers and Save as PDF.
+
+---
+
 ## [Unreleased]
 
 ### Added

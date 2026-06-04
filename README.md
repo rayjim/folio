@@ -31,6 +31,7 @@ Open `notes.html` directly in Chrome or Edge. All data is stored in your browser
 | **Notebook archive** | × button opens Archive / Delete Permanently dialog — archived notebooks are hidden but fully recoverable |
 | **Notebook reorder** | Right-click tab → Move Left / Move Right |
 | **Export** | Per-page clean HTML download |
+| **Print** | 🖨 Print button opens a clean popup (page content only, no app chrome) and triggers the browser print dialog — works for printers and Save as PDF |
 | **Auto-save** | 1.2 s debounce on edits; every structural change saves immediately; 5-minute safety-net flush |
 | **Math rendering** | KaTeX — inline (`$...$`) and display (`$$...$$`) math; also `\(...\)` and `\[...\]` LaTeX delimiters |
 
