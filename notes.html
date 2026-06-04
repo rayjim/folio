@@ -522,9 +522,12 @@ const Storage = {
 };
 
 /* ============================================================ FILE STORE */
+const IS_ELECTRON = typeof window !== 'undefined' && !!window.electronAPI;
+
 const FileStore = {
   _db:null, _dataDir:null, _attachDir:null,
   _IDB:'folio_v1', _STORE:'handles',
+  _EL_DATA:'folio_el_data_path', _EL_ATTACH:'folio_el_attach_path',
 
   async _openDB(){
     if(this._db) return this._db;
@@ -556,6 +559,11 @@ const FileStore = {
   },
 
   async init(){
+    if(IS_ELECTRON){
+      this._dataDir=localStorage.getItem(this._EL_DATA)||null;
+      this._attachDir=localStorage.getItem(this._EL_ATTACH)||null;
+      return;
+    }
     if(!('showDirectoryPicker' in window)) return;
     try{
       this._dataDir=await this._get('data');
@@ -564,11 +572,13 @@ const FileStore = {
   },
 
   async pickData(){
-    // Pick without mode — passing mode:'readwrite' silently aborts on file:// origins.
+    if(IS_ELECTRON){
+      const p=await window.electronAPI.pickFolder();
+      if(!p){ const e=new Error('Cancelled'); e.name='AbortError'; throw e; }
+      this._dataDir=p; localStorage.setItem(this._EL_DATA,p);
+      return {name:p.split(/[/\\]/).pop()};
+    }
     const h=await window.showDirectoryPicker();
-    // Immediately request write permission while we are still inside the user-gesture
-    // context of the click handler. Background saves (debounce / interval) cannot show
-    // a permission prompt, so we must prime it here.
     const perm=await h.requestPermission({mode:'readwrite'});
     if(perm!=='granted') throw new Error('Write permission not granted for "'+h.name+'"');
     this._dataDir=h;
@@ -576,6 +586,12 @@ const FileStore = {
     return h;
   },
   async pickAttach(){
+    if(IS_ELECTRON){
+      const p=await window.electronAPI.pickFolder();
+      if(!p){ const e=new Error('Cancelled'); e.name='AbortError'; throw e; }
+      this._attachDir=p; localStorage.setItem(this._EL_ATTACH,p);
+      return {name:p.split(/[/\\]/).pop()};
+    }
     const h=await window.showDirectoryPicker();
     const perm=await h.requestPermission({mode:'readwrite'});
     if(perm!=='granted') throw new Error('Write permission not granted for "'+h.name+'"');
@@ -586,6 +602,18 @@ const FileStore = {
 
   async save(){
     if(!this._dataDir) return false;
+    if(IS_ELECTRON){
+      try{
+        await window.electronAPI.writeJson(this._dataDir,'notebooks.json',State.notebooks);
+        await window.electronAPI.writeJson(this._dataDir,'pages.json',State.pages);
+        await window.electronAPI.writeJson(this._dataDir,'state.json',{
+          activeNotebookId:State.activeNotebookId, activePageId:State.activePageId,
+          viewMode:State.viewMode, theme:State.theme, fontSize:State.fontSize
+        });
+        FilePoller._ownMod=await window.electronAPI.getFileMtime(this._dataDir,'pages.json');
+        return true;
+      }catch(e){ console.warn('FileStore.save (electron):',e); return false; }
+    }
     try{
       if(!await this._perm(this._dataDir)) return false;
       const write=async(name,data)=>{
@@ -609,6 +637,23 @@ const FileStore = {
 
   async load(){
     if(!this._dataDir) return false;
+    if(IS_ELECTRON){
+      try{
+        const nb=await window.electronAPI.readJson(this._dataDir,'notebooks.json');
+        const pg=await window.electronAPI.readJson(this._dataDir,'pages.json');
+        const st=await window.electronAPI.readJson(this._dataDir,'state.json');
+        if(nb) State.notebooks=nb;
+        if(pg) State.pages=pg;
+        if(st){
+          State.activeNotebookId=st.activeNotebookId||null;
+          State.activePageId=st.activePageId||null;
+          State.viewMode=st.viewMode||'rendered';
+          State.theme=st.theme||'dark';
+          State.fontSize=st.fontSize||15;
+        }
+        return !!(nb||pg);
+      }catch(e){ console.warn('FileStore.load (electron):',e); return false; }
+    }
     try{
       if(!await this._perm(this._dataDir)) return false;
       const read=async(name)=>{
@@ -641,8 +686,16 @@ const FileStore = {
     URL.revokeObjectURL(a.href);
   },
 
-  dataName(){ return this._dataDir?.name??null; },
-  attachName(){ return this._attachDir?.name??null; },
+  dataName(){
+    if(!this._dataDir) return null;
+    if(IS_ELECTRON) return this._dataDir.split(/[/\\]/).pop();
+    return this._dataDir?.name??null;
+  },
+  attachName(){
+    if(!this._attachDir) return null;
+    if(IS_ELECTRON) return this._attachDir.split(/[/\\]/).pop();
+    return this._attachDir?.name??null;
+  },
   isLinked(){ return !!this._dataDir; },
 };
 
@@ -653,6 +706,18 @@ const AttachStore = {
 
   async save(attId, file){
     const dir=this._dir();
+    if(IS_ELECTRON && dir){
+      try{
+        const fname=attId+'_'+file.name.replace(/[^\w.\-]/g,'_');
+        const b64=await new Promise((res,rej)=>{
+          const r=new FileReader();
+          r.onload=e=>res(e.target.result.split(',')[1]);
+          r.onerror=()=>rej(r.error);
+          r.readAsDataURL(file);
+        });
+        return await window.electronAPI.writeAttachment(dir,fname,b64);
+      }catch(e){ console.warn('AttachStore.save (electron):',e); }
+    }
     if(dir){
       try{
         if(await FileStore._perm(dir)){
@@ -674,6 +739,17 @@ const AttachStore = {
 
   async getUrl(att){
     const dir=this._dir();
+    if(IS_ELECTRON && dir){
+      try{
+        const b64=await window.electronAPI.readAttachment(dir,this._fname(att));
+        if(b64){
+          const ext=att.name.split('.').pop().toLowerCase();
+          const mimes={png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',gif:'image/gif',
+                       webp:'image/webp',svg:'image/svg+xml',pdf:'application/pdf'};
+          return `data:${mimes[ext]||'application/octet-stream'};base64,${b64}`;
+        }
+      }catch{}
+    }
     if(dir){
       try{
         if(await FileStore._perm(dir)){
@@ -687,7 +763,11 @@ const AttachStore = {
 
   async remove(att){
     const dir=this._dir();
-    if(dir){ try{ if(await FileStore._perm(dir)) await dir.removeEntry(this._fname(att)); }catch{} }
+    if(IS_ELECTRON && dir){
+      await window.electronAPI.removeAttachment(dir,this._fname(att));
+    } else if(dir){
+      try{ if(await FileStore._perm(dir)) await dir.removeEntry(this._fname(att)); }catch{}
+    }
     localStorage.removeItem(KEYS.attPfx+att.id);
   }
 };
@@ -703,6 +783,16 @@ const FilePoller = {
 
   async _check(){
     if(!FileStore.isLinked()) return;
+    if(IS_ELECTRON){
+      try{
+        const mtime=await window.electronAPI.getFileMtime(FileStore._dataDir,'pages.json');
+        if(mtime<=this._ownMod) return;
+        this._ownMod=mtime;
+        const ok=await FileStore.load();
+        if(ok){ UI.renderAll(); Editor.loadPage(State.activePageId); flashSynced(); }
+      }catch{}
+      return;
+    }
     try{
       if(await FileStore._dataDir.queryPermission({mode:'readwrite'})!=='granted') return;
       const fh=await FileStore._dataDir.getFileHandle('pages.json');
@@ -1491,7 +1581,9 @@ const StorageUI = {
     const sb=document.getElementById('storage-btn');
     if(FileStore.isLinked()) sb.classList.add('linked'); else sb.classList.remove('linked');
     const apiNote=document.getElementById('stor-api-note');
-    if(!('showDirectoryPicker' in window)){
+    if(IS_ELECTRON){
+      apiNote.textContent='';
+    } else if(!('showDirectoryPicker' in window)){
       apiNote.innerHTML='⚠ <strong>File System Access API not supported</strong> — use Chrome or Edge for folder sync.';
     } else if(location.protocol==='file:'){
       apiNote.innerHTML='<strong>ℹ file:// mode</strong> — Link works this session only. Re-link after each reload, or run via server (<code>python3 -m http.server 8080</code>) for auto-persistence.';
