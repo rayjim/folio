@@ -20,16 +20,17 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Show environment
-        run: |
-          node --version
-          npm --version
-          npx electron-builder --version
-        shell: pwsh
+      - name: Step 1 — package app (no NSIS yet)
+        run: npx electron-builder --win dir
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
 
-      - name: Build Windows installer
-        run: npx electron-builder --win
-        shell: pwsh
+      - name: List dist/win-unpacked
+        run: dir dist\win-unpacked
+        shell: cmd
+
+      - name: Step 2 — build NSIS installer from pre-packaged dir
+        run: npx electron-builder --win nsis --prepackaged dist\win-unpacked
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
