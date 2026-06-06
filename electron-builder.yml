@@ -1,0 +1,19 @@
+appId: com.folio.app
+productName: Folio
+directories:
+  output: dist
+files:
+  - notes.html
+  - main.js
+  - preload.js
+  - package.json
+mac:
+  category: public.app-category.productivity
+  target:
+    - dmg
+win:
+  target:
+    - nsis
+linux:
+  target:
+    - AppImage
