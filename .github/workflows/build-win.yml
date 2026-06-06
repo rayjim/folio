@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: windows-2022
 
     steps:
       - uses: actions/checkout@v4
@@ -20,23 +20,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build Windows installer
+      - name: Show environment
         run: |
-          npx electron-builder --win --verbose 2>&1 | Tee-Object -FilePath build-log.txt
-          exit $LASTEXITCODE
+          node --version
+          npm --version
+          npx electron-builder --version
+        shell: pwsh
+
+      - name: Build Windows installer
+        run: npx electron-builder --win
         shell: pwsh
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
-          WIN_CSC_LINK: ''
-          WIN_CSC_KEY_PASSWORD: ''
-
-      - name: Upload build log on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-log
-          path: build-log.txt
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
