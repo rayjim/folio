@@ -21,13 +21,22 @@ jobs:
         run: npm ci
 
       - name: Build Windows installer
-        run: npx electron-builder --win --verbose
+        run: |
+          npx electron-builder --win --verbose 2>&1 | Tee-Object -FilePath build-log.txt
+          exit $LASTEXITCODE
+        shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
           WIN_CSC_LINK: ''
           WIN_CSC_KEY_PASSWORD: ''
-          DEBUG: electron-builder
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build-log.txt
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
