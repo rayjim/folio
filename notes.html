@@ -305,6 +305,14 @@ button{font-family:var(--font-ui);cursor:pointer}
 .sr-suggest-icon{font-size:13px;color:var(--text-dim);flex-shrink:0;width:16px;text-align:center}
 .sr-suggest-text{font-size:12px;color:var(--text-pri);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sr-suggest mark{background:rgba(78,157,224,.28);color:var(--accent);border-radius:2px;padding:0 1px;font-weight:600}
+#clip-popover{display:none;position:absolute;top:calc(100% + 6px);right:0;width:300px;background:var(--bg-toolbar);border:1px solid var(--border2);border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.18);padding:14px 16px;z-index:200;font-size:13px;color:var(--text-sec);line-height:1.5}
+#clip-popover.open{display:block}
+#clip-popover strong{color:var(--text-pri)}
+#clip-popover ol{margin:8px 0 10px 16px;padding:0;color:var(--text-pri)}
+#clip-popover li{margin-bottom:3px}
+#clip-bookmarklet{display:inline-block;margin-top:2px;padding:5px 12px;background:var(--accent);color:#fff;border-radius:6px;font-weight:600;font-size:13px;text-decoration:none;cursor:grab;user-select:none}
+#clip-bookmarklet:active{cursor:grabbing}
+#clip-note{margin-top:8px;font-size:11.5px;color:var(--text-dim);border-top:1px solid var(--border);padding-top:8px}
 </style>
 </head>
 <body>
@@ -387,6 +395,19 @@ button{font-family:var(--font-ui);cursor:pointer}
           <button class="tb-btn" id="tb-export" title="Export page as HTML">Export ↓</button>
           <button class="tb-btn" id="tb-print"  title="Print page">🖨 Print</button>
           <button class="tb-btn" id="tb-attach" title="Attach file — or drag & drop / paste files here">📎 Attach</button>
+          <div style="position:relative">
+            <button class="tb-btn" id="tb-clip" title="Save webpage to Folio — get the browser bookmarklet">📌 Clip</button>
+            <div id="clip-popover">
+              <strong>Save any webpage to Folio</strong>
+              <ol>
+                <li>Drag the button below to your <strong>browser bookmarks bar</strong></li>
+                <li>On any webpage, click <em>Save to Folio</em></li>
+                <li>Switch to Folio and press <strong>Ctrl+V</strong></li>
+              </ol>
+              <a id="clip-bookmarklet" title="Drag me to your bookmarks bar">📌 Save to Folio</a>
+              <div id="clip-note">The page title is set automatically from the webpage's &lt;title&gt; tag.</div>
+            </div>
+          </div>
         </div>
       </div>
       <div id="editor-pane">
@@ -1222,6 +1243,14 @@ const Editor = {
       const val=document.getElementById('source-view').value;
       const detected=Utils.detectContentType(val);
       pg.content=val; pg.contentType=detected;
+      // Auto-set title from <title> tag when pasting a full HTML doc into an untitled page
+      if(detected==='html' && Utils.isFullDoc(val) && !pg.title){
+        const m=val.match(/<title[^>]*>([^<]+)<\/title>/i);
+        if(m){
+          const extracted=m[1].trim();
+          if(extracted){ pg.title=extracted; document.getElementById('page-title-input').value=extracted; UI.renderSidebar(); }
+        }
+      }
       this._refreshBadge(detected);
       if(State.viewMode==='rendered'){
         const ren=document.getElementById('rendered-view');
@@ -1979,6 +2008,18 @@ const NbCtxMenu = {
 };
 
 /* ============================================================ ATTACH UI */
+const ClipUI = {
+  init(){
+    const btn=document.getElementById('tb-clip');
+    const pop=document.getElementById('clip-popover');
+    const bm=document.getElementById('clip-bookmarklet');
+    const src=`(function(){var h='<!DOCTYPE html>\\n'+document.documentElement.outerHTML;navigator.clipboard.writeText(h).then(function(){var d=document.createElement('div');d.style.cssText='position:fixed;top:20px;right:20px;background:#222;color:#fff;padding:10px 18px;border-radius:8px;font:14px/1.5 sans-serif;z-index:2147483647;box-shadow:0 3px 12px rgba(0,0,0,.5)';d.textContent='\\u2713 Copied \\u2014 paste into Folio';document.body.appendChild(d);setTimeout(function(){d.remove()},2500)},function(){alert('Clipboard write blocked. Try View Source \\u2192 Ctrl+A \\u2192 Ctrl+C')});})();`;
+    bm.href='javascript:'+src;
+    btn.addEventListener('click',e=>{ e.stopPropagation(); pop.classList.toggle('open'); });
+    document.addEventListener('click',e=>{ if(!pop.contains(e.target)&&e.target!==btn) pop.classList.remove('open'); });
+  },
+};
+
 const AttachUI = {
   _icon(type){
     if(type.startsWith('image/'))  return '🖼';
@@ -2231,6 +2272,7 @@ document.addEventListener('DOMContentLoaded',async()=>{
   document.getElementById('tb-export').addEventListener('click',()=>Export.page());
   document.getElementById('tb-print').addEventListener('click',()=>Print.page());
   document.getElementById('tb-attach').addEventListener('click',()=>document.getElementById('attach-input').click());
+  ClipUI.init();
   document.getElementById('attach-input').addEventListener('change',e=>{
     if(e.target.files.length) AttachUI.addFiles([...e.target.files]);
     e.target.value='';
