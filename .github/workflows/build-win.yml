@@ -21,12 +21,13 @@ jobs:
         run: npm ci
 
       - name: Build Windows installer
-        run: npm run build:win
+        run: npx electron-builder --win --verbose
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
           WIN_CSC_LINK: ''
           WIN_CSC_KEY_PASSWORD: ''
+          DEBUG: electron-builder
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
