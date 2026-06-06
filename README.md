@@ -34,6 +34,7 @@ Open `notes.html` directly in Chrome or Edge. All data is stored in your browser
 | **Print** | 🖨 Print button opens a clean popup (page content only, no app chrome) and triggers the browser print dialog — works for printers and Save as PDF |
 | **Auto-save** | 1.2 s debounce on edits; every structural change saves immediately; 5-minute safety-net flush |
 | **Math rendering** | KaTeX — inline (`$...$`) and display (`$$...$$`) math; also `\(...\)` and `\[...\]` LaTeX delimiters |
+| **Electron desktop app** | Runs as a native installable app on Windows and macOS via Electron — no browser needed; native `fs` replaces the File System Access API |
 
 ---
 
@@ -55,6 +56,18 @@ python3 -m http.server 8080
 ```
 
 A local server is required for the File System Access API (folder sync) to work in Chrome; `file://` access works for everything else.
+
+### Option C — Electron desktop app
+
+Requires Node.js.
+
+```bash
+npm install
+npm start          # dev mode (launches Electron)
+npm run dist       # build installer (outputs to dist/)
+```
+
+On first launch the app asks you to pick your Folio data folder (the same folder used in browser mode — zero migration needed). The packaged installer on Windows and macOS does not need the `--no-sandbox` / `--disable-gpu` flags used in dev/container environments.
 
 ---
 

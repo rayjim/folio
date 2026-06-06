@@ -6,6 +6,13 @@ Versions follow `vYYYY.MM.DD` (date of release).
 
 ---
 
+## [v2026.06.06] — 2026-06-06
+
+### Added
+- **Electron desktop app** — Folio can now run as an installable native desktop app on Windows and macOS via Electron. Run `npm start` to launch in dev mode; use `npm run dist` to build a distributable installer. The app routes file I/O through native `fs` instead of the File System Access API — no browser needed, no flags, no server. Browser mode (plain `file://` or HTTP server) is fully preserved. Data files (`notebooks.json`, `pages.json`, `state.json`) are unchanged — zero migration needed.
+
+---
+
 ## [v2026.06.04] — 2026-06-04
 
 ### Added
