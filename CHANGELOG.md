@@ -10,6 +10,8 @@ Versions follow `vYYYY.MM.DD` (date of release).
 
 ### Added
 - **Electron desktop app** — Folio can now run as an installable native desktop app on Windows and macOS via Electron. Run `npm start` to launch in dev mode; use `npm run dist` to build a distributable installer. The app routes file I/O through native `fs` instead of the File System Access API — no browser needed, no flags, no server. Browser mode (plain `file://` or HTTP server) is fully preserved. Data files (`notebooks.json`, `pages.json`, `state.json`) are unchanged — zero migration needed.
+- **Web Clip bookmarklet** — save any webpage to Folio in one click. Click **📌 Clip** in the toolbar to get the bookmarklet; drag it to the browser bookmarks bar. On any page, click it to copy the full HTML to the clipboard, then Ctrl+V in Folio to create a new page. Page title is extracted from the `<title>` tag automatically.
+- **GitHub Actions Windows build** — pushing to `master` or any `feature/*` branch triggers a Windows installer build (NSIS `.exe`) on GitHub Actions; download the artifact from the Actions tab.
 
 ---
 

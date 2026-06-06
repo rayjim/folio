@@ -35,6 +35,7 @@ Open `notes.html` directly in Chrome or Edge. All data is stored in your browser
 | **Auto-save** | 1.2 s debounce on edits; every structural change saves immediately; 5-minute safety-net flush |
 | **Math rendering** | KaTeX — inline (`$...$`) and display (`$$...$$`) math; also `\(...\)` and `\[...\]` LaTeX delimiters |
 | **Electron desktop app** | Runs as a native installable app on Windows and macOS via Electron — no browser needed; native `fs` replaces the File System Access API |
+| **Web Clip bookmarklet** | 📌 Clip button in toolbar gives a draggable bookmarklet — click it on any webpage to copy the full HTML to clipboard, then Ctrl+V in Folio to save the page |
 
 ---
 
