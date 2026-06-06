@@ -2,6 +2,7 @@
   "name": "folio",
   "version": "1.0.0",
   "description": "Folio — personal notebook app",
+  "author": "Folio",
   "main": "main.js",
   "scripts": {
     "start": "electron . --no-sandbox --disable-gpu",
