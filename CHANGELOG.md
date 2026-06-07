@@ -6,6 +6,20 @@ Versions follow `vYYYY.MM.DD` (date of release).
 
 ---
 
+## [v2026.06.07] — 2026-06-07
+
+### Added
+- **Ctrl+scroll zoom** — in rendered (HTML/Markdown) view, hold Ctrl and scroll to zoom in or out, just like a browser. `Ctrl+0` resets to 100%. A brief percentage indicator appears while adjusting.
+- **Windows installer via GitHub Actions** — pushing to `master` or any `feature/*` branch now builds a proper Windows setup `.exe` using Inno Setup (replaces the previous portable zip). Download from the Actions → Artifacts tab.
+
+### Fixed
+- **Folder link now auto-loads existing data** — clicking "Change…" to link a data folder immediately reads any existing notes from that folder and shows them in the sidebar, instead of overwriting the folder with current state first.
+
+### Removed
+- **Default Data Folder Path** setting — removed from the Storage panel; it was machine-specific and only used by the old `folio-start.ps1` launcher.
+
+---
+
 ## [v2026.06.06] — 2026-06-06
 
 ### Added
