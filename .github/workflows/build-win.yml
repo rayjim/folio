@@ -40,9 +40,7 @@ jobs:
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
-        run: |
-          $exe = Get-ChildItem dist\Folio-Setup-*.exe | Select-Object -First 1 -ExpandProperty FullName
-          gh release create $env:GITHUB_REF_NAME $exe --title "Folio $env:GITHUB_REF_NAME" --notes "Windows installer — see CHANGELOG.md for what changed in this version."
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/Folio-Setup-*.exe
+          body: "Windows installer — see [CHANGELOG.md](https://github.com/rayjim/folio/blob/master/CHANGELOG.md) for what changed."
