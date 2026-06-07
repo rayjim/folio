@@ -313,6 +313,8 @@ button{font-family:var(--font-ui);cursor:pointer}
 #clip-bookmarklet{display:inline-block;margin-top:2px;padding:5px 12px;background:var(--accent);color:#fff;border-radius:6px;font-weight:600;font-size:13px;text-decoration:none;cursor:grab;user-select:none}
 #clip-bookmarklet:active{cursor:grabbing}
 #clip-note{margin-top:8px;font-size:11.5px;color:var(--text-dim);border-top:1px solid var(--border);padding-top:8px}
+#zoom-indicator{position:absolute;bottom:18px;right:18px;background:rgba(0,0,0,.62);color:#fff;padding:4px 11px;border-radius:7px;font-size:13px;font-weight:600;pointer-events:none;opacity:0;transition:opacity .25s;z-index:20}
+#zoom-indicator.visible{opacity:1}
 </style>
 </head>
 <body>
@@ -2009,6 +2011,48 @@ const NbCtxMenu = {
 };
 
 /* ============================================================ ATTACH UI */
+const ZoomUI = {
+  _level: 1.0,
+  _min: 0.25,
+  _max: 4.0,
+  _styleEl: null,
+  _indTimer: null,
+
+  init(){
+    // Inject persistent style element so zoom survives _renderTo cssText resets
+    this._styleEl = document.createElement('style');
+    this._styleEl.id = 'zoom-style';
+    document.head.appendChild(this._styleEl);
+
+    // Add indicator element to editor-pane (which is position:relative)
+    const ind = document.createElement('div');
+    ind.id = 'zoom-indicator';
+    document.getElementById('editor-pane').appendChild(ind);
+
+    document.getElementById('rendered-view').addEventListener('wheel', e => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      this._adjust(e.deltaY < 0 ? 0.1 : -0.1);
+    }, { passive: false });
+  },
+
+  _adjust(delta){
+    this._level = Math.round(Math.min(this._max, Math.max(this._min, this._level + delta)) * 10) / 10;
+    this._apply();
+  },
+
+  reset(){ this._level = 1.0; this._apply(); },
+
+  _apply(){
+    this._styleEl.textContent = `#rendered-view { zoom: ${this._level}; }`;
+    const ind = document.getElementById('zoom-indicator');
+    ind.textContent = Math.round(this._level * 100) + '%';
+    ind.classList.add('visible');
+    clearTimeout(this._indTimer);
+    this._indTimer = setTimeout(() => ind.classList.remove('visible'), 1200);
+  },
+};
+
 const ClipUI = {
   init(){
     const btn=document.getElementById('tb-clip');
@@ -2274,6 +2318,7 @@ document.addEventListener('DOMContentLoaded',async()=>{
   document.getElementById('tb-print').addEventListener('click',()=>Print.page());
   document.getElementById('tb-attach').addEventListener('click',()=>document.getElementById('attach-input').click());
   ClipUI.init();
+  ZoomUI.init();
   document.getElementById('attach-input').addEventListener('change',e=>{
     if(e.target.files.length) AttachUI.addFiles([...e.target.files]);
     e.target.value='';
@@ -2376,6 +2421,7 @@ document.addEventListener('DOMContentLoaded',async()=>{
     const mod=e.ctrlKey||e.metaKey;
     if(e.key==='Escape'){Search.close();CtxMenu.hide();NbCtxMenu.hide();NbDeleteDialog.hide();ColorPicker.close();document.getElementById('archived-panel').classList.add('hidden');return;}
     if(mod&&e.key==='/')   {e.preventDefault();Editor.toggleViewMode();}
+    else if(mod&&e.key==='0'){if(State.viewMode==='rendered'){e.preventDefault();ZoomUI.reset();}}
     else if(mod&&e.key==='f'){e.preventDefault();si.focus();si.select();}
     else if(mod&&!e.shiftKey&&e.key==='n'){e.preventDefault();document.getElementById('btn-new-page').click();}
     else if(mod&&e.shiftKey&&e.key==='N'){
