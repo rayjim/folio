@@ -20,27 +20,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build Windows installer (capture full output)
-        id: build
-        run: |
-          npx electron-builder --win 2>&1 | Out-File -FilePath build-output.txt -Encoding utf8
-          $exitCode = $LASTEXITCODE
-          Get-Content build-output.txt
-          exit $exitCode
-        shell: pwsh
+      - name: Build Windows installer
+        run: npx electron-builder --win
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
-      - name: Upload build output on failure
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-output
-          path: build-output.txt
-
       - name: Upload installer
-        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: Folio-Windows-Setup
