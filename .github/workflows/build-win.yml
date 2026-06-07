@@ -20,15 +20,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build Windows installer
-        run: npx electron-builder --win
+      - name: Package app
+        run: npx electron-builder --win dir
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Build installer with Inno Setup
+        run: |
+          & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' installer.iss
+        shell: pwsh
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
           name: Folio-Windows-Setup
-          path: dist/*.exe
+          path: dist/Folio-Setup-*.exe
           retention-days: 30
