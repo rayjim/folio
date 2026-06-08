@@ -11,6 +11,7 @@ mac:
   category: public.app-category.productivity
   target:
     - dmg
+  identity: null
 win:
   target:
     - nsis
