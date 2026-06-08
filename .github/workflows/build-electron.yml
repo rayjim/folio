@@ -58,6 +58,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Folio-macOS
-          path: dist/mac*/*.zip
+          path: dist/*.zip
           if-no-files-found: warn
           retention-days: 7
