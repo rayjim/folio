@@ -404,6 +404,20 @@ button{font-family:var(--font-ui);cursor:pointer}
   </div>
 </div>
 
+<!-- Generic dialog (replaces browser prompt/confirm/alert for Electron compatibility) -->
+<div id="dlg-bd" class="modal-bd hidden" style="z-index:4000">
+  <div class="modal-card" style="max-width:400px;width:90vw">
+    <div class="modal-body" style="padding:20px;gap:14px">
+      <div id="dlg-msg" style="font-size:13px;line-height:1.6;color:var(--text-pri);white-space:pre-wrap"></div>
+      <input type="text" id="dlg-input" style="display:none;width:100%;background:var(--bg-input);border:1px solid var(--border2);color:var(--text-pri);padding:6px 10px;border-radius:var(--radius);font:13px var(--font-ui);outline:none;box-sizing:border-box">
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="tb-btn" id="dlg-cancel-btn">Cancel</button>
+        <button class="tb-btn" id="dlg-ok-btn" style="background:var(--accent);color:#fff;border-color:transparent">OK</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Storage modal -->
 <div id="stor-bd" class="modal-bd hidden">
   <div class="modal-card">
@@ -956,10 +970,10 @@ const Pages = {
     if(!('modifiedAt' in fields)) pg.modifiedAt=new Date().toISOString();
     State.flush();
   },
-  delete(id){
+  async delete(id){
     const pg=State.page(id); if(!pg) return false;
     const descIds=this._descendants(id);
-    if(!confirm(descIds.length?`Delete "${pg.title}" and its ${descIds.length} sub-page(s)?`:`Delete "${pg.title}"?`)) return false;
+    if(!await Dialog.confirm(descIds.length?`Delete "${pg.title}" and its ${descIds.length} sub-page(s)?`:`Delete "${pg.title}"?`)) return false;
     const ids=new Set([id,...descIds]);
     State.pages.filter(p=>ids.has(p.id)).forEach(p=>(p.attachments||[]).forEach(a=>AttachStore.remove(a)));
     State.pages=State.pages.filter(p=>!ids.has(p.id));
@@ -1536,7 +1550,7 @@ del{text-decoration:line-through;color:#888}
 ${bodyHtml}
 </body></html>`;
     const popup=window.open('','_blank','width=900,height=700');
-    if(!popup){alert('Please allow popups for this page to use Print.'); return;}
+    if(!popup){Dialog.alert('Please allow popups for this page to use Print.'); return;}
     popup.document.open();
     popup.document.write(html);
     popup.document.close();
@@ -1641,9 +1655,9 @@ const UI = {
         State.activePageId=Pages.roots(nb.id)[0]?.id??null;
         State.flush(); this.renderAll(); Editor.loadPage(State.activePageId);
       });
-      el.querySelector('.tab-name').addEventListener('dblclick',e=>{
+      el.querySelector('.tab-name').addEventListener('dblclick',async e=>{
         e.stopPropagation();
-        const name=prompt('Rename notebook:',nb.name);
+        const name=await Dialog.prompt('Rename notebook:',nb.name);
         if(name?.trim()){Notebooks.rename(nb.id,name.trim());this.renderTabs();}
       });
       el.querySelector('.tab-x').addEventListener('click',e=>{
@@ -1676,9 +1690,9 @@ const UI = {
         UI.renderAll(); UI.renderArchived();
       }));
     list.querySelectorAll('[data-nb-perm]').forEach(btn=>
-      btn.addEventListener('click',()=>{
+      btn.addEventListener('click',async()=>{
         const nb=State.notebook(btn.dataset.nbPerm);
-        if(!nb||!confirm(`Permanently delete "${nb.name}" and ALL its pages?`)) return;
+        if(!nb||!await Dialog.confirm(`Permanently delete "${nb.name}" and ALL its pages?`)) return;
         Notebooks.deletePermanent(nb.id); UI.renderAll(); UI.renderArchived();
       }));
   },
@@ -1859,11 +1873,11 @@ const CtxMenu = {
     m.classList.add('open');
   },
   hide(){ document.getElementById('ctx-menu').classList.remove('open'); this._target=null; },
-  handle(action){
+  async handle(action){
     const pg=this._target; this.hide(); if(!pg) return;
     if(action==='copy-link'){ copyPageLink(pg.id); return; }
     if(action==='rename'){
-      const name=prompt('Rename page:',pg.title);
+      const name=await Dialog.prompt('Rename page:',pg.title);
       if(name?.trim()){
         Pages.update(pg.id,{title:name.trim()});
         if(pg.id===State.activePageId) document.getElementById('page-title-input').value=name.trim();
@@ -1881,7 +1895,7 @@ const CtxMenu = {
     } else if(action==='move-up'){ Pages.move(pg.id,'up'); UI.renderSidebar();
     } else if(action==='move-down'){ Pages.move(pg.id,'down'); UI.renderSidebar();
     } else if(action==='delete'){
-      if(Pages.delete(pg.id)){UI.renderSidebar();Editor.loadPage(State.activePageId);}
+      if(await Pages.delete(pg.id)){UI.renderSidebar();Editor.loadPage(State.activePageId);}
     }
   }
 };
@@ -1935,9 +1949,9 @@ const NbDeleteDialog = {
     const nb=this._nb; this.hide(); if(!nb) return;
     Notebooks.archive(nb.id); UI.renderAll(); Editor.loadPage(State.activePageId);
   },
-  doPerm(){
+  async doPerm(){
     const nb=this._nb; this.hide(); if(!nb) return;
-    if(!confirm(`Permanently delete "${nb.name}" and ALL its pages? This cannot be undone.`)) return;
+    if(!await Dialog.confirm(`Permanently delete "${nb.name}" and ALL its pages? This cannot be undone.`)) return;
     Notebooks.deletePermanent(nb.id); UI.renderAll(); Editor.loadPage(State.activePageId);
   },
 };
@@ -1955,7 +1969,7 @@ const NbCtxMenu = {
     m.classList.add('open');
   },
   hide(){ document.getElementById('nb-ctx-menu').classList.remove('open'); this._target=null; },
-  handle(action){
+  async handle(action){
     const nb=this._target; this.hide(); if(!nb) return;
     if(action==='move-left'||action==='move-right'){
       const sorted=[...State.notebooks].sort((a,b)=>a.order-b.order);
@@ -1965,7 +1979,7 @@ const NbCtxMenu = {
       [sorted[idx].order,sorted[swap].order]=[sorted[swap].order,sorted[idx].order];
       State.flush(); UI.renderTabs();
     } else if(action==='rename'){
-      const name=prompt('Rename notebook:',nb.name);
+      const name=await Dialog.prompt('Rename notebook:',nb.name);
       if(name?.trim()){Notebooks.rename(nb.id,name.trim());UI.renderTabs();}
     } else if(action==='delete'){
       NbDeleteDialog.show(nb);
@@ -2012,11 +2026,11 @@ const AttachUI = {
         await this._embedImage(file,pg); continue;
       }
       if(noFolder&&file.size>2*1024*1024){
-        alert(`"${file.name}" is over 2MB. Link a data folder (📁) to store large files.`); continue;
+        Dialog.alert(`"${file.name}" is over 2MB. Link a data folder (📁) to store large files.`); continue;
       }
       const attId='att_'+Utils.uuid();
       const ok=await AttachStore.save(attId,file);
-      if(!ok){ alert(`Could not save "${file.name}". Try linking a data folder first.`); continue; }
+      if(!ok){ Dialog.alert(`Could not save "${file.name}". Try linking a data folder first.`); continue; }
       pg.attachments.push({id:attId,name:file.name,size:file.size,
         type:file.type||'application/octet-stream',addedAt:new Date().toISOString()});
     }
@@ -2047,7 +2061,7 @@ const AttachUI = {
     const pg=State.activePage();
     const att=pg?.attachments?.find(a=>a.id===attId); if(!att) return;
     const url=await AttachStore.getUrl(att);
-    if(!url){ alert('File not found — it may have been moved or deleted.'); return; }
+    if(!url){ Dialog.alert('File not found — it may have been moved or deleted.'); return; }
     const a=Object.assign(document.createElement('a'),{href:url,download:att.name});
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(()=>{ if(url.startsWith('blob:')) URL.revokeObjectURL(url); },5000);
@@ -2056,10 +2070,44 @@ const AttachUI = {
   async remove(attId){
     const pg=State.activePage();
     const att=pg?.attachments?.find(a=>a.id===attId); if(!att) return;
-    if(!confirm(`Remove "${att.name}"?`)) return;
+    if(!await Dialog.confirm(`Remove "${att.name}"?`)) return;
     await AttachStore.remove(att);
     pg.attachments=pg.attachments.filter(a=>a.id!==attId);
     State.flush(); this.render(pg);
+  }
+};
+
+/* ============================================================ DIALOG (Electron-safe prompt/confirm/alert) */
+const Dialog = {
+  _resolve:null, _isPrompt:false, _alertT:null,
+
+  _show(msg, isPrompt, def=''){
+    return new Promise(res=>{
+      this._resolve=res; this._isPrompt=isPrompt;
+      document.getElementById('dlg-msg').textContent=msg;
+      const inp=document.getElementById('dlg-input');
+      inp.style.display=isPrompt?'block':'none';
+      if(isPrompt){ inp.value=def; setTimeout(()=>{inp.focus();inp.select();},30); }
+      else document.getElementById('dlg-ok-btn').focus();
+      document.getElementById('dlg-bd').classList.remove('hidden');
+    });
+  },
+  confirm(msg){ return this._show(msg,false); },
+  prompt(msg,def){ return this._show(msg,true,def); },
+  alert(msg){
+    const el=document.getElementById('save-indicator');
+    el.textContent='⚠ '+msg;
+    clearTimeout(this._alertT);
+    this._alertT=setTimeout(()=>{ el.textContent='Saved ✓'; },3500);
+  },
+  _ok(){
+    const val=this._isPrompt?document.getElementById('dlg-input').value:true;
+    document.getElementById('dlg-bd').classList.add('hidden');
+    if(this._resolve){this._resolve(val);this._resolve=null;}
+  },
+  _cancel(){
+    document.getElementById('dlg-bd').classList.add('hidden');
+    if(this._resolve){this._resolve(this._isPrompt?null:false);this._resolve=null;}
   }
 };
 
@@ -2140,8 +2188,8 @@ document.addEventListener('DOMContentLoaded',async()=>{
   });
 
   // Add notebook
-  document.getElementById('btn-add-nb').addEventListener('click',()=>{
-    const name=prompt('New notebook name:'); if(!name?.trim()) return;
+  document.getElementById('btn-add-nb').addEventListener('click',async()=>{
+    const name=await Dialog.prompt('New notebook name:'); if(!name?.trim()) return;
     Editor.saveNow();
     const nb=Notebooks.create(name.trim());
     State.activeNotebookId=nb.id; State.activePageId=null; State.flush();
@@ -2187,7 +2235,7 @@ document.addEventListener('DOMContentLoaded',async()=>{
 
   // New page
   document.getElementById('btn-new-page').addEventListener('click',()=>{
-    if(!State.activeNotebookId){alert('Create a notebook first.');return;}
+    if(!State.activeNotebookId){Dialog.alert('Create a notebook first.');return;}
     Editor.saveNow();
     const pg=Pages.create(State.activeNotebookId,null,'Untitled Page');
     State.activePageId=pg.id; State.flush();
@@ -2386,6 +2434,14 @@ document.addEventListener('DOMContentLoaded',async()=>{
 
   UI.renderAll(); Editor.loadPage(State.activePageId);
   UI._initDragDrop();
+
+  // Dialog buttons
+  document.getElementById('dlg-ok-btn').addEventListener('click',()=>Dialog._ok());
+  document.getElementById('dlg-cancel-btn').addEventListener('click',()=>Dialog._cancel());
+  document.getElementById('dlg-input').addEventListener('keydown',e=>{
+    if(e.key==='Enter'){e.preventDefault();Dialog._ok();}
+    if(e.key==='Escape'){e.preventDefault();Dialog._cancel();}
+  });
 });
 </script>
 </body>
