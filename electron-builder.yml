@@ -10,8 +10,7 @@ files:
 mac:
   category: public.app-category.productivity
   target:
-    - dmg
-  identity: null
+    - zip
 win:
   target:
     - nsis
