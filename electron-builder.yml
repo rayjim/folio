@@ -1,5 +1,6 @@
 appId: com.folio.app
 productName: Folio
+publish: never
 directories:
   output: dist
 files:
