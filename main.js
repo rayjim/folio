@@ -4,6 +4,16 @@ const fs = require('fs').promises;
 
 let mainWindow;
 
+// Persistent config stored in userData (survives localStorage clears and reinstalls)
+const configPath = () => path.join(app.getPath('userData'), 'folio-paths.json');
+
+async function readPaths() {
+  try { return JSON.parse(await fs.readFile(configPath(), 'utf8')); } catch { return {}; }
+}
+async function writePaths(data) {
+  try { await fs.writeFile(configPath(), JSON.stringify(data, null, 2), 'utf8'); } catch {}
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -31,6 +41,10 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
+
+ipcMain.handle('get-saved-paths', async () => readPaths());
+
+ipcMain.handle('save-paths', async (_, data) => { await writePaths(data); });
 
 ipcMain.handle('pick-folder', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {

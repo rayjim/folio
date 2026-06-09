@@ -599,8 +599,17 @@ const FileStore = {
 
   async init(){
     if(IS_ELECTRON){
-      this._dataDir=localStorage.getItem(this._EL_DATA)||null;
-      this._attachDir=localStorage.getItem(this._EL_ATTACH)||null;
+      // Primary source: folio-paths.json in app userData (survives localStorage clears)
+      try{
+        const saved=await window.electronAPI.getSavedPaths();
+        if(saved.dataDir)   { this._dataDir=saved.dataDir;   localStorage.setItem(this._EL_DATA,saved.dataDir); }
+        if(saved.attachDir) { this._attachDir=saved.attachDir; localStorage.setItem(this._EL_ATTACH,saved.attachDir); }
+      }catch{}
+      // Fallback: localStorage (for backwards compatibility)
+      if(!this._dataDir)   this._dataDir=localStorage.getItem(this._EL_DATA)||null;
+      if(!this._attachDir) this._attachDir=localStorage.getItem(this._EL_ATTACH)||null;
+      // Back-fill config file if we only had localStorage data
+      if(this._dataDir) this._persistPaths();
       return;
     }
     if(!('showDirectoryPicker' in window)) return;
@@ -610,11 +619,20 @@ const FileStore = {
     }catch(e){ console.warn('FileStore.init:',e); }
   },
 
+  _persistPaths(){
+    if(!IS_ELECTRON) return;
+    window.electronAPI.savePaths({
+      dataDir:   this._dataDir||null,
+      attachDir: this._attachDir||null,
+    }).catch(()=>{});
+  },
+
   async pickData(){
     if(IS_ELECTRON){
       const p=await window.electronAPI.pickFolder();
       if(!p){ const e=new Error('Cancelled'); e.name='AbortError'; throw e; }
       this._dataDir=p; localStorage.setItem(this._EL_DATA,p);
+      this._persistPaths();
       return {name:p.split(/[/\\]/).pop()};
     }
     const h=await window.showDirectoryPicker();
@@ -629,6 +647,7 @@ const FileStore = {
       const p=await window.electronAPI.pickFolder();
       if(!p){ const e=new Error('Cancelled'); e.name='AbortError'; throw e; }
       this._attachDir=p; localStorage.setItem(this._EL_ATTACH,p);
+      this._persistPaths();
       return {name:p.split(/[/\\]/).pop()};
     }
     const h=await window.showDirectoryPicker();
