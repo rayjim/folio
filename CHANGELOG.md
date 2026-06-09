@@ -6,6 +6,17 @@ Versions follow `vYYYY.MM.DD` (date of release).
 
 ---
 
+## [v2026.06.09b] — 2026-06-09
+
+### Added
+- **Folder conflict detection** — when multiple Electron windows share the same data folder and one saves, the other detects the conflict and shows a dialog: "Load Latest" (reload from disk) or "Keep Mine" (overwrite with current state). Triggers both on save and on the 3-second file poller.
+- **Persistent folder path** — the linked data folder path is now stored in `folio-paths.json` inside the app's userData directory, not just localStorage. Survives reinstalls and localStorage clears; auto-loads the folder on every startup without any manual re-linking.
+
+### Fixed
+- `publish: never` in `electron-builder.yml` causing macOS CI to fail with MODULE_NOT_FOUND.
+
+---
+
 ## [v2026.06.09] — 2026-06-09
 
 ### Added

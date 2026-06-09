@@ -934,7 +934,13 @@ const State = {
   <li>Switch light/dark theme with the 🌙 button in the top-right</li>
 </ul>
 
-<h2>What's New — v2026.06.09</h2>
+<h2>What's New — v2026.06.09b</h2>
+<ul>
+  <li>🔁 <strong>Folder conflict detection</strong> — when two Folio windows share the same folder and one saves, the other shows a dialog: <em>Load Latest</em> or <em>Keep Mine</em>. No more silent overwrites.</li>
+  <li>💾 <strong>Persistent folder memory</strong> — the linked folder path is now saved to <code>userData/folio-paths.json</code> so the app reopens to your data every time, even after reinstalls.</li>
+</ul>
+
+<h2>v2026.06.09</h2>
 <ul>
   <li>🍎 <strong>macOS CI build</strong> — GitHub Actions now builds a macOS <code>.zip</code> on every push alongside the Windows installer. Download from the Actions → Artifacts tab.</li>
   <li>💬 <strong>In-app dialogs</strong> — Add Notebook, rename, delete and all other interactive prompts now use a built-in modal dialog instead of the browser's native <code>prompt()</code>/<code>confirm()</code>. Fixes silent no-op behaviour in the Electron app.</li>
