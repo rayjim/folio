@@ -48,28 +48,23 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify electron binary
+      - name: Verify environment
         run: |
-          node -e "const p = require('electron'); console.log('electron path:', p)"
-          ls "$(node -e "process.stdout.write(require('electron'))")" || echo "binary not found"
+          echo "::notice::node $(node --version), npm $(npm --version)"
+          echo "::notice::arch=$(uname -m), os=$(sw_vers -productVersion)"
+          node -e "const p=require('electron'); console.log('::notice::electron binary:', p)"
 
       - name: Build macOS app
-        run: npx electron-builder --mac --publish never 2>&1 | tee /tmp/build.log; exit ${PIPESTATUS[0]}
+        id: build
+        run: |
+          npx electron-builder --mac --publish never 2>&1 | while IFS= read -r line; do
+            echo "$line"
+            echo "::notice::$line"
+          done
+          exit ${PIPESTATUS[0]}
         env:
           CSC_LINK: ""
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-        continue-on-error: true
-
-      - name: Upload build log
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: macos-build-log
-          path: /tmp/build.log
-          retention-days: 3
-
-      - name: Fail if build failed
-        run: grep -q "✓" /tmp/build.log && exit 0 || exit 1
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
