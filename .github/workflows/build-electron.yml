@@ -48,25 +48,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify environment
-        run: |
-          echo "::notice::node $(node --version), npm $(npm --version)"
-          echo "::notice::arch=$(uname -m), os=$(sw_vers -productVersion)"
-          node -e "const p=require('electron'); console.log('::notice::electron binary:', p)"
-
       - name: Build macOS app
-        id: build
-        run: |
-          npx electron-builder --mac --publish never 2>&1 | while IFS= read -r line; do
-            echo "$line"
-            echo "::notice::$line"
-          done
-          exit ${PIPESTATUS[0]}
+        run: npx electron-builder --mac --publish never
         env:
           CSC_LINK: ""
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
-      - name: Upload macOS artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: Folio-macOS
