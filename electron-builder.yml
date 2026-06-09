@@ -11,7 +11,10 @@ publish: never
 mac:
   category: public.app-category.productivity
   target:
-    - dmg
+    - zip
+  identity: null
+  hardenedRuntime: false
+  gatekeeperAssess: false
 win:
   target:
     - nsis

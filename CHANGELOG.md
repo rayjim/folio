@@ -6,6 +6,16 @@ Versions follow `vYYYY.MM.DD` (date of release).
 
 ---
 
+## [v2026.06.09] — 2026-06-09
+
+### Added
+- **macOS CI build** — pushing to `master` or any `feature/*` branch now also builds a macOS `.zip` (unsigned) via GitHub Actions. Download from the Actions → Artifacts tab. Requires Electron 33 + electron-builder 26.
+
+### Fixed
+- **In-app dialog system** — all native `prompt()` / `confirm()` / `alert()` calls (Add Notebook, rename, delete, etc.) are replaced with a custom modal dialog. Electron with `contextIsolation: true` silently blocks native browser dialogs; the custom Dialog object restores all interactive flows without requiring any Electron API changes.
+
+---
+
 ## [v2026.06.07] — 2026-06-07
 
 ### Added

@@ -34,7 +34,8 @@ Open `notes.html` directly in Chrome or Edge. All data is stored in your browser
 | **Print** | 🖨 Print button opens a clean popup (page content only, no app chrome) and triggers the browser print dialog — works for printers and Save as PDF |
 | **Auto-save** | 1.2 s debounce on edits; every structural change saves immediately; 5-minute safety-net flush |
 | **Math rendering** | KaTeX — inline (`$...$`) and display (`$$...$$`) math; also `\(...\)` and `\[...\]` LaTeX delimiters |
-| **Electron desktop app** | Runs as a native installable app on Windows and macOS via Electron — no browser needed; native `fs` replaces the File System Access API |
+| **Electron desktop app** | Runs as a native installable app on Windows and macOS via Electron — no browser needed; native `fs` replaces the File System Access API; all dialogs use a custom in-app modal (works with Electron's `contextIsolation`) |
+| **CI builds** | GitHub Actions builds Windows installer (Inno Setup) and macOS `.zip` on every push to `master` or `feature/*`; download from the Actions → Artifacts tab |
 | **Web Clip bookmarklet** | 📌 Clip button in toolbar gives a draggable bookmarklet — click it on any webpage to copy the full HTML to clipboard, then Ctrl+V in Folio to save the page |
 | **Rendered view zoom** | Ctrl+scroll to zoom in/out in HTML/Markdown rendered view; `Ctrl+0` resets to 100% |
 
