@@ -427,6 +427,20 @@ button{font-family:var(--font-ui);cursor:pointer}
   </div>
 </div>
 
+<!-- Conflict dialog (shown when multiple Electron windows write the same folder) -->
+<div id="conflict-bd" class="modal-bd hidden" style="z-index:5000">
+  <div class="modal-card" style="max-width:440px;width:90vw">
+    <div class="modal-body" style="padding:20px;gap:14px">
+      <div style="font-size:13px;font-weight:600;color:var(--text-pri)">⚠ Folder Conflict</div>
+      <div id="conflict-msg" style="font-size:13px;line-height:1.6;color:var(--text-sec)"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="tb-btn" id="conflict-load-btn">📂 Load Latest</button>
+        <button class="tb-btn" id="conflict-keep-btn" style="background:var(--accent);color:#fff;border-color:transparent">💾 Keep Mine</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Generic dialog (replaces browser prompt/confirm/alert for Electron compatibility) -->
 <div id="dlg-bd" class="modal-bd hidden" style="z-index:4000">
   <div class="modal-card" style="max-width:400px;width:90vw">
@@ -585,8 +599,17 @@ const FileStore = {
 
   async init(){
     if(IS_ELECTRON){
-      this._dataDir=localStorage.getItem(this._EL_DATA)||null;
-      this._attachDir=localStorage.getItem(this._EL_ATTACH)||null;
+      // Primary source: folio-paths.json in app userData (survives localStorage clears)
+      try{
+        const saved=await window.electronAPI.getSavedPaths();
+        if(saved.dataDir)   { this._dataDir=saved.dataDir;   localStorage.setItem(this._EL_DATA,saved.dataDir); }
+        if(saved.attachDir) { this._attachDir=saved.attachDir; localStorage.setItem(this._EL_ATTACH,saved.attachDir); }
+      }catch{}
+      // Fallback: localStorage (for backwards compatibility)
+      if(!this._dataDir)   this._dataDir=localStorage.getItem(this._EL_DATA)||null;
+      if(!this._attachDir) this._attachDir=localStorage.getItem(this._EL_ATTACH)||null;
+      // Back-fill config file if we only had localStorage data
+      if(this._dataDir) this._persistPaths();
       return;
     }
     if(!('showDirectoryPicker' in window)) return;
@@ -596,11 +619,20 @@ const FileStore = {
     }catch(e){ console.warn('FileStore.init:',e); }
   },
 
+  _persistPaths(){
+    if(!IS_ELECTRON) return;
+    window.electronAPI.savePaths({
+      dataDir:   this._dataDir||null,
+      attachDir: this._attachDir||null,
+    }).catch(()=>{});
+  },
+
   async pickData(){
     if(IS_ELECTRON){
       const p=await window.electronAPI.pickFolder();
       if(!p){ const e=new Error('Cancelled'); e.name='AbortError'; throw e; }
       this._dataDir=p; localStorage.setItem(this._EL_DATA,p);
+      this._persistPaths();
       return {name:p.split(/[/\\]/).pop()};
     }
     const h=await window.showDirectoryPicker();
@@ -615,6 +647,7 @@ const FileStore = {
       const p=await window.electronAPI.pickFolder();
       if(!p){ const e=new Error('Cancelled'); e.name='AbortError'; throw e; }
       this._attachDir=p; localStorage.setItem(this._EL_ATTACH,p);
+      this._persistPaths();
       return {name:p.split(/[/\\]/).pop()};
     }
     const h=await window.showDirectoryPicker();
@@ -629,6 +662,22 @@ const FileStore = {
     if(!this._dataDir) return false;
     if(IS_ELECTRON){
       try{
+        // Conflict check: if disk was modified by another instance since we last synced
+        const diskMtime=await window.electronAPI.getFileMtime(this._dataDir,'pages.json');
+        if(diskMtime && FilePoller._ownMod>0 && diskMtime>FilePoller._ownMod){
+          const choice=await ConflictDialog.ask(
+            'Another Folio window has saved changes to this folder.\n\n'+
+            '📂 Load Latest — load their version (your current changes will be lost)\n'+
+            '💾 Keep Mine — overwrite with your current state'
+          );
+          if(choice==='load'){
+            FilePoller._ownMod=diskMtime; FilePoller._dirty=false;
+            const ok=await FileStore.load();
+            if(ok){ UI.renderAll(); Editor.loadPage(State.activePageId); }
+            return false;
+          }
+          // 'keep': fall through to overwrite
+        }
         await window.electronAPI.writeJson(this._dataDir,'notebooks.json',State.notebooks);
         await window.electronAPI.writeJson(this._dataDir,'pages.json',State.pages);
         await window.electronAPI.writeJson(this._dataDir,'state.json',{
@@ -636,6 +685,7 @@ const FileStore = {
           viewMode:State.viewMode, theme:State.theme, fontSize:State.fontSize
         });
         FilePoller._ownMod=await window.electronAPI.getFileMtime(this._dataDir,'pages.json');
+        FilePoller._dirty=false;
         return true;
       }catch(e){ console.warn('FileStore.save (electron):',e); return false; }
     }
@@ -667,6 +717,8 @@ const FileStore = {
         const nb=await window.electronAPI.readJson(this._dataDir,'notebooks.json');
         const pg=await window.electronAPI.readJson(this._dataDir,'pages.json');
         const st=await window.electronAPI.readJson(this._dataDir,'state.json');
+        // Sync _ownMod so save-time conflict check has a correct baseline
+        try{ FilePoller._ownMod=await window.electronAPI.getFileMtime(this._dataDir,'pages.json'); }catch{}
         if(nb) State.notebooks=nb;
         if(pg) State.pages=pg;
         if(st){
@@ -799,7 +851,7 @@ const AttachStore = {
 
 /* ============================================================ FILE POLLER (cross-browser sync) */
 const FilePoller = {
-  _timer:null, _ownMod:0,
+  _timer:null, _ownMod:0, _dirty:false,
 
   start(){
     if(this._timer) return;
@@ -812,9 +864,24 @@ const FilePoller = {
       try{
         const mtime=await window.electronAPI.getFileMtime(FileStore._dataDir,'pages.json');
         if(mtime<=this._ownMod) return;
-        this._ownMod=mtime;
-        const ok=await FileStore.load();
-        if(ok){ UI.renderAll(); Editor.loadPage(State.activePageId); flashSynced(); }
+        if(this._dirty){
+          const choice=await ConflictDialog.ask(
+            'Another Folio window saved changes to this folder.\n\n'+
+            '📂 Load Latest — discard your current changes and load their version\n'+
+            '💾 Keep Mine — keep your changes (they will overwrite on next save)'
+          );
+          if(choice==='load'){
+            this._ownMod=mtime; this._dirty=false;
+            const ok=await FileStore.load();
+            if(ok){ UI.renderAll(); Editor.loadPage(State.activePageId); flashSynced(); }
+          } else {
+            this._ownMod=mtime; // acknowledge we know about this version; our next save will overwrite
+          }
+        } else {
+          this._ownMod=mtime;
+          const ok=await FileStore.load();
+          if(ok){ UI.renderAll(); Editor.loadPage(State.activePageId); flashSynced(); }
+        }
       }catch{}
       return;
     }
@@ -941,7 +1008,8 @@ const State = {
       activeNotebookId:this.activeNotebookId, activePageId:this.activePageId,
       viewMode:this.viewMode, theme:this.theme, fontSize:this.fontSize
     });
-    FileStore.save(); // async fire-and-forget; no-op if no folder linked
+    if(IS_ELECTRON && FileStore.isLinked()) FilePoller._dirty=true;
+    FileStore.save(); // async; clears _dirty on success
     if(typeof flashSaved==='function') flashSaved();
   },
   notebook(id){ return this.notebooks.find(n=>n.id===(id??this.activeNotebookId)) },
@@ -2201,6 +2269,25 @@ const Dialog = {
   }
 };
 
+/* ============================================================ CONFLICT DIALOG */
+const ConflictDialog = {
+  _resolve: null,
+  _active: false,
+  ask(msg){
+    if(this._active) return Promise.resolve('skip');
+    return new Promise(res=>{
+      this._resolve=res; this._active=true;
+      document.getElementById('conflict-msg').textContent=msg;
+      document.getElementById('conflict-bd').classList.remove('hidden');
+    });
+  },
+  _choose(val){
+    this._active=false;
+    document.getElementById('conflict-bd').classList.add('hidden');
+    if(this._resolve){this._resolve(val);this._resolve=null;}
+  }
+};
+
 /* ============================================================ INIT */
 document.addEventListener('DOMContentLoaded',async()=>{
   marked.setOptions({gfm:true,breaks:false});
@@ -2539,6 +2626,10 @@ document.addEventListener('DOMContentLoaded',async()=>{
   // Dialog buttons
   document.getElementById('dlg-ok-btn').addEventListener('click',()=>Dialog._ok());
   document.getElementById('dlg-cancel-btn').addEventListener('click',()=>Dialog._cancel());
+
+  // Conflict dialog buttons
+  document.getElementById('conflict-load-btn').addEventListener('click',()=>ConflictDialog._choose('load'));
+  document.getElementById('conflict-keep-btn').addEventListener('click',()=>ConflictDialog._choose('keep'));
   document.getElementById('dlg-input').addEventListener('keydown',e=>{
     if(e.key==='Enter'){e.preventDefault();Dialog._ok();}
     if(e.key==='Escape'){e.preventDefault();Dialog._cancel();}

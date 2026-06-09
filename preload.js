@@ -1,6 +1,8 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
+  getSavedPaths:     ()                       => ipcRenderer.invoke('get-saved-paths'),
+  savePaths:         (data)                   => ipcRenderer.invoke('save-paths', data),
   pickFolder:        ()                       => ipcRenderer.invoke('pick-folder'),
   readJson:          (folder, file)           => ipcRenderer.invoke('read-json', folder, file),
   writeJson:         (folder, file, data)     => ipcRenderer.invoke('write-json', folder, file, data),

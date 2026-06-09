@@ -7,7 +7,6 @@ files:
   - main.js
   - preload.js
   - package.json
-publish: never
 mac:
   category: public.app-category.productivity
   target:
