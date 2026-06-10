@@ -6,6 +6,15 @@ Versions follow `vYYYY.MM.DD` (date of release).
 
 ---
 
+## [v2026.06.10c] — 2026-06-10
+
+### Fixed
+- **Export dropdown always visible on load** — `.export-menu.hidden` had no `display:none` rule; menu was permanently shown.
+- **Email export sent plain text** — now copies the full page HTML to clipboard and opens the mail app with the title as subject; user pastes (Ctrl+V) into the email body to get formatted HTML content.
+- **PDF / folder dialogs appeared behind other windows** — switched to `BrowserWindow.getFocusedWindow()` so dialogs always attach to the correct window.
+
+---
+
 ## [v2026.06.10b] — 2026-06-10
 
 ### Added
