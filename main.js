@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
 
@@ -44,6 +44,12 @@ app.on('window-all-closed', () => {
 
 ipcMain.handle('open-external', async (_, url) => { await shell.openExternal(url); });
 
+ipcMain.handle('copy-html', async (_, html) => {
+  // Write HTML (for rich-text paste in email clients) + plain text fallback
+  const plain = html.replace(/<[^>]+>/g, ' ').replace(/\s{2,}/g, ' ').trim();
+  clipboard.write({ html, text: plain });
+});
+
 ipcMain.handle('save-pdf', async (_, htmlContent, defaultName) => {
   const tmpPath = path.join(app.getPath('temp'), 'folio-pdf-tmp.html');
   const pdfWin = new BrowserWindow({ show: false, webPreferences: { nodeIntegration: false, contextIsolation: true } });
@@ -53,7 +59,7 @@ ipcMain.handle('save-pdf', async (_, htmlContent, defaultName) => {
     const pdfData = await pdfWin.webContents.printToPDF({ printBackground: true, pageSize: 'A4' });
     pdfWin.close();
     await fs.unlink(tmpPath).catch(() => {});
-    const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+    const { canceled, filePath } = await dialog.showSaveDialog(BrowserWindow.getFocusedWindow() || mainWindow, {
       defaultPath: (defaultName || 'export') + '.pdf',
       filters: [{ name: 'PDF', extensions: ['pdf'] }],
     });
@@ -72,7 +78,7 @@ ipcMain.handle('get-saved-paths', async () => readPaths());
 ipcMain.handle('save-paths', async (_, data) => { await writePaths(data); });
 
 ipcMain.handle('pick-folder', async () => {
-  const result = await dialog.showOpenDialog(mainWindow, {
+  const result = await dialog.showOpenDialog(BrowserWindow.getFocusedWindow() || mainWindow, {
     properties: ['openDirectory', 'createDirectory'],
     title: 'Select Folio Data Folder',
   });
