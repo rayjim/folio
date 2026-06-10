@@ -6,6 +6,16 @@ Versions follow `vYYYY.MM.DD` (date of release).
 
 ---
 
+## [v2026.06.10b] — 2026-06-10
+
+### Added
+- **Export dropdown** — the `Export` toolbar button is now a dropdown with three options:
+  - **Save as HTML** — downloads a clean standalone `.html` file (existing behaviour)
+  - **Save as PDF** — Electron only: uses native `printToPDF()` to save a proper `.pdf` file via a save dialog; in the browser, shows a reminder to use Print → Save as PDF
+  - **Send via Email** — opens the system mail app (or Outlook) with the page title as subject and plain-text body via `mailto:`; content over ~1800 chars is truncated with a note
+
+---
+
 ## [v2026.06.10] — 2026-06-10
 
 ### Fixed
