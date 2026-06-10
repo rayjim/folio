@@ -1685,21 +1685,35 @@ ${body}
   async email(){
     const pg=State.activePage(); if(!pg) return;
     const html=this._buildHtml(pg);
-    const subject=encodeURIComponent(pg.title);
-    const mailto=`mailto:?subject=${subject}`;
+
+    // Build plain-text body for mailto: (email clients only accept plain text in URL)
+    const tmp=document.createElement('div');
+    tmp.innerHTML=Editor.render(pg.content,pg.contentType);
+    const plain=(tmp.textContent||tmp.innerText||'').replace(/\n{3,}/g,'\n\n').trim();
+    const LIMIT=1500;
+    const bodyText=plain.length>LIMIT ? plain.slice(0,LIMIT)+'\n\n...' : plain;
+
+    const mailto=`mailto:?subject=${encodeURIComponent(pg.title)}&body=${encodeURIComponent(bodyText)}`;
+
+    // Also copy full HTML to clipboard so user can paste for rich formatting
     if(IS_ELECTRON){
       await window.electronAPI.copyHtml(html);
       await window.electronAPI.openExternal(mailto).catch(()=>{});
     } else {
-      // Browser: copy HTML to clipboard as rich text
       try{
-        await navigator.clipboard.write([new ClipboardItem({'text/html':new Blob([html],{type:'text/html'}),'text/plain':new Blob([html.replace(/<[^>]+>/g,' ')],{type:'text/plain'})})]);
-      }catch{
-        await navigator.clipboard.writeText(html).catch(()=>{});
-      }
+        await navigator.clipboard.write([new ClipboardItem({
+          'text/html':new Blob([html],{type:'text/html'}),
+          'text/plain':new Blob([plain],{type:'text/plain'})
+        })]);
+      }catch{ await navigator.clipboard.writeText(html).catch(()=>{}); }
       window.location.href=mailto;
     }
-    Dialog.alert('Page HTML copied to clipboard.\nPaste it into your email body (Ctrl+V).');
+
+    // Non-blocking flash notification
+    const ind=document.getElementById('save-indicator');
+    ind.textContent='✉ Email opened — select all & paste (Ctrl+A, Ctrl+V) for HTML';
+    ind.classList.add('show');
+    setTimeout(()=>{ind.textContent='Saved ✓';ind.classList.remove('show');},5000);
   },
 
   toggleMenu(){
