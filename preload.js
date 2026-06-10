@@ -1,6 +1,8 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
+  openExternal:      (url)                    => ipcRenderer.invoke('open-external', url),
+  savePdf:           (html, name)             => ipcRenderer.invoke('save-pdf', html, name),
   getSavedPaths:     ()                       => ipcRenderer.invoke('get-saved-paths'),
   savePaths:         (data)                   => ipcRenderer.invoke('save-paths', data),
   pickFolder:        ()                       => ipcRenderer.invoke('pick-folder'),

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
 
@@ -40,6 +40,31 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
+});
+
+ipcMain.handle('open-external', async (_, url) => { await shell.openExternal(url); });
+
+ipcMain.handle('save-pdf', async (_, htmlContent, defaultName) => {
+  const tmpPath = path.join(app.getPath('temp'), 'folio-pdf-tmp.html');
+  const pdfWin = new BrowserWindow({ show: false, webPreferences: { nodeIntegration: false, contextIsolation: true } });
+  try {
+    await fs.writeFile(tmpPath, htmlContent, 'utf8');
+    await pdfWin.loadFile(tmpPath);
+    const pdfData = await pdfWin.webContents.printToPDF({ printBackground: true, pageSize: 'A4' });
+    pdfWin.close();
+    await fs.unlink(tmpPath).catch(() => {});
+    const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+      defaultPath: (defaultName || 'export') + '.pdf',
+      filters: [{ name: 'PDF', extensions: ['pdf'] }],
+    });
+    if (!canceled && filePath) { await fs.writeFile(filePath, pdfData); return true; }
+    return false;
+  } catch (e) {
+    pdfWin.close();
+    await fs.unlink(tmpPath).catch(() => {});
+    console.error('save-pdf:', e);
+    return false;
+  }
 });
 
 ipcMain.handle('get-saved-paths', async () => readPaths());

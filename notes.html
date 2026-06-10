@@ -257,6 +257,9 @@ button{font-family:var(--font-ui);cursor:pointer}
 .ctx-item:hover{background:var(--bg-hover)}
 .ctx-item.danger{color:#e06060}
 .ctx-sep{height:1px;background:var(--border);margin:3px 0}
+.export-menu{position:absolute;top:calc(100% + 4px);right:0;background:var(--bg-overlay);border:1px solid var(--border2);border-radius:6px;padding:4px 0;box-shadow:0 4px 18px rgba(0,0,0,.45);z-index:2000;min-width:170px}
+.export-item{padding:7px 14px;font-size:13px;color:var(--text-pri);cursor:pointer;white-space:nowrap}
+.export-item:hover{background:var(--bg-hover)}
 /* ============================================================ SCROLLBARS */
 ::-webkit-scrollbar{width:6px;height:6px}
 ::-webkit-scrollbar-track{background:transparent}
@@ -394,7 +397,14 @@ button{font-family:var(--font-ui);cursor:pointer}
           <span id="save-indicator">Saved ✓</span>
           <span id="type-badge" class="markdown" title="Click to cycle content type">MD</span>
           <button class="tb-btn" id="tb-view"   title="Toggle source/rendered (Ctrl+/)">Rendered</button>
-          <button class="tb-btn" id="tb-export" title="Export page as HTML">Export ↓</button>
+          <div style="position:relative;display:inline-block">
+            <button class="tb-btn" id="tb-export" title="Export options">Export ▾</button>
+            <div id="export-menu" class="export-menu hidden">
+              <div class="export-item" id="exp-html">📄 Save as HTML</div>
+              <div class="export-item" id="exp-pdf">📄 Save as PDF</div>
+              <div class="export-item" id="exp-email">✉ Send via Email</div>
+            </div>
+          </div>
           <button class="tb-btn" id="tb-print"  title="Print page">🖨 Print</button>
           <button class="tb-btn" id="tb-attach" title="Attach file — or drag & drop / paste files here">📎 Attach</button>
           <div style="position:relative">
@@ -1594,16 +1604,12 @@ const Search = {
 
 /* ============================================================ EXPORT */
 const Export = {
-  page(){
-    const pg=State.activePage(); if(!pg) return;
-    // Full HTML documents are exported as-is (they already have their own styles/scripts)
-    if(pg.contentType==='html' && Utils.isFullDoc(pg.content)){
-      const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob([pg.content],{type:'text/html'})),download:(pg.title.replace(/[^\w\s-]/g,'').trim()||'export')+'.html'});
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      URL.revokeObjectURL(a.href); return;
-    }
+  _safeName(title){ return title.replace(/[^\w\s-]/g,'').trim()||'export'; },
+
+  _buildHtml(pg){
+    if(pg.contentType==='html' && Utils.isFullDoc(pg.content)) return pg.content;
     const body=Editor.render(pg.content,pg.contentType);
-    const html=`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+    return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>${Utils.escapeHtml(pg.title)}</title>
 <style>
@@ -1633,9 +1639,53 @@ del{text-decoration:line-through;color:#888}
 ${body}
 <div class="footer">Created ${new Date(pg.createdAt).toLocaleString()} · Modified ${new Date(pg.modifiedAt).toLocaleString()} · Exported from Folio</div>
 </body></html>`;
-    const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob([html],{type:'text/html'})),download:(pg.title.replace(/[^\w\s-]/g,'').trim()||'export')+'.html'});
+  },
+
+  page(){
+    const pg=State.activePage(); if(!pg) return;
+    const html=this._buildHtml(pg);
+    const a=Object.assign(document.createElement('a'),{
+      href:URL.createObjectURL(new Blob([html],{type:'text/html'})),
+      download:this._safeName(pg.title)+'.html'
+    });
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     URL.revokeObjectURL(a.href);
+  },
+
+  async pdf(){
+    const pg=State.activePage(); if(!pg) return;
+    if(IS_ELECTRON){
+      const html=this._buildHtml(pg);
+      const ok=await window.electronAPI.savePdf(html, this._safeName(pg.title));
+      if(ok===false) Dialog.alert('PDF export was cancelled.');
+    } else {
+      Dialog.alert('PDF export is only available in the Electron desktop app.\nUse 🖨 Print → "Save as PDF" instead.');
+    }
+  },
+
+  email(){
+    const pg=State.activePage(); if(!pg) return;
+    // Extract plain text from rendered content
+    const tmp=document.createElement('div');
+    tmp.innerHTML=Editor.render(pg.content, pg.contentType);
+    const plain=(tmp.textContent||tmp.innerText||'').replace(/\n{3,}/g,'\n\n').trim();
+    const LIMIT=1800;
+    const bodyText=plain.length>LIMIT
+      ? plain.slice(0,LIMIT)+'\n\n[Content truncated — export as HTML for full version]'
+      : plain;
+    const mailto=`mailto:?subject=${encodeURIComponent(pg.title)}&body=${encodeURIComponent(bodyText)}`;
+    if(IS_ELECTRON){
+      window.electronAPI.openExternal(mailto).catch(()=>{});
+    } else {
+      window.location.href=mailto;
+    }
+  },
+
+  toggleMenu(){
+    document.getElementById('export-menu').classList.toggle('hidden');
+  },
+  closeMenu(){
+    document.getElementById('export-menu').classList.add('hidden');
   }
 };
 
@@ -2472,7 +2522,11 @@ document.addEventListener('DOMContentLoaded',async()=>{
   document.getElementById('tb-h3').addEventListener('click',()=>Editor.applyFormat('h3'));
   document.getElementById('tb-color').addEventListener('click',e=>{e.stopPropagation();ColorPicker.toggle(e.currentTarget);});
   document.getElementById('tb-view').addEventListener('click',()=>Editor.toggleViewMode());
-  document.getElementById('tb-export').addEventListener('click',()=>Export.page());
+  document.getElementById('tb-export').addEventListener('click', e=>{ e.stopPropagation(); Export.toggleMenu(); });
+  document.getElementById('exp-html').addEventListener('click', ()=>{ Export.closeMenu(); Export.page(); });
+  document.getElementById('exp-pdf').addEventListener('click',  ()=>{ Export.closeMenu(); Export.pdf(); });
+  document.getElementById('exp-email').addEventListener('click',()=>{ Export.closeMenu(); Export.email(); });
+  document.addEventListener('click', e=>{ if(!e.target.closest('#tb-export')&&!e.target.closest('#export-menu')) Export.closeMenu(); });
   document.getElementById('tb-print').addEventListener('click',()=>Print.page());
   document.getElementById('tb-attach').addEventListener('click',()=>document.getElementById('attach-input').click());
   ClipUI.init();
