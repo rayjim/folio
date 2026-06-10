@@ -6,6 +6,13 @@ Versions follow `vYYYY.MM.DD` (date of release).
 
 ---
 
+## [v2026.06.10] — 2026-06-10
+
+### Fixed
+- **In-page anchor navigation in rendered HTML** — clicking `<a href="#section">` links, table-of-contents buttons, and any hash-based navigation inside a rendered full HTML page now smoothly scrolls to the target section. Previously, the iframe sandbox blocked `window.location.hash` changes so all hash links were silently ignored.
+
+---
+
 ## [v2026.06.09b] — 2026-06-09
 
 ### Added
