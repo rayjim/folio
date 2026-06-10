@@ -6,6 +6,13 @@ Versions follow `vYYYY.MM.DD` (date of release).
 
 ---
 
+## [v2026.06.10d] — 2026-06-10
+
+### Fixed
+- **Email export body was empty** — `Send via Email` now opens the mail app with the page content in the body (plain text, as `mailto:` requires) and simultaneously copies the full HTML to clipboard. To get rich formatting, select all in the email body and paste (Ctrl+A → Ctrl+V). A status-bar tip explains this for 5 seconds.
+
+---
+
 ## [v2026.06.10c] — 2026-06-10
 
 ### Fixed
