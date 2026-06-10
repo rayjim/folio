@@ -258,6 +258,7 @@ button{font-family:var(--font-ui);cursor:pointer}
 .ctx-item.danger{color:#e06060}
 .ctx-sep{height:1px;background:var(--border);margin:3px 0}
 .export-menu{position:absolute;top:calc(100% + 4px);right:0;background:var(--bg-overlay);border:1px solid var(--border2);border-radius:6px;padding:4px 0;box-shadow:0 4px 18px rgba(0,0,0,.45);z-index:2000;min-width:170px}
+.export-menu.hidden{display:none}
 .export-item{padding:7px 14px;font-size:13px;color:var(--text-pri);cursor:pointer;white-space:nowrap}
 .export-item:hover{background:var(--bg-hover)}
 /* ============================================================ SCROLLBARS */
@@ -1674,22 +1675,24 @@ ${body}
     }
   },
 
-  email(){
+  async email(){
     const pg=State.activePage(); if(!pg) return;
-    // Extract plain text from rendered content
-    const tmp=document.createElement('div');
-    tmp.innerHTML=Editor.render(pg.content, pg.contentType);
-    const plain=(tmp.textContent||tmp.innerText||'').replace(/\n{3,}/g,'\n\n').trim();
-    const LIMIT=1800;
-    const bodyText=plain.length>LIMIT
-      ? plain.slice(0,LIMIT)+'\n\n[Content truncated — export as HTML for full version]'
-      : plain;
-    const mailto=`mailto:?subject=${encodeURIComponent(pg.title)}&body=${encodeURIComponent(bodyText)}`;
+    const html=this._buildHtml(pg);
+    const subject=encodeURIComponent(pg.title);
+    const mailto=`mailto:?subject=${subject}`;
     if(IS_ELECTRON){
-      window.electronAPI.openExternal(mailto).catch(()=>{});
+      await window.electronAPI.copyHtml(html);
+      await window.electronAPI.openExternal(mailto).catch(()=>{});
     } else {
+      // Browser: copy HTML to clipboard as rich text
+      try{
+        await navigator.clipboard.write([new ClipboardItem({'text/html':new Blob([html],{type:'text/html'}),'text/plain':new Blob([html.replace(/<[^>]+>/g,' ')],{type:'text/plain'})})]);
+      }catch{
+        await navigator.clipboard.writeText(html).catch(()=>{});
+      }
       window.location.href=mailto;
     }
+    Dialog.alert('Page HTML copied to clipboard.\nPaste it into your email body (Ctrl+V).');
   },
 
   toggleMenu(){
