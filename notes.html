@@ -1245,20 +1245,33 @@ const Editor = {
       f.style.cssText='flex:1;width:100%;border:none;min-height:0;display:block;';
       f.setAttribute('sandbox','allow-scripts allow-forms allow-popups allow-modals');
       let src=content;
-      if(hlQ){
-        try{
-          const d=new DOMParser().parseFromString(content,'text/html');
+      try{
+        const d=new DOMParser().parseFromString(content,'text/html');
+        // Inject in-page anchor navigation (sandbox blocks window.location.hash changes,
+        // so we intercept hash-link clicks and use scrollIntoView instead)
+        const navScr=d.createElement('script');
+        navScr.textContent=`(function(){
+document.addEventListener('click',function(e){
+  var a=e.target.closest('a[href^="#"]');
+  if(!a)return;
+  var id=decodeURIComponent(a.getAttribute('href').slice(1));
+  if(!id)return;
+  var t=document.getElementById(id)||document.querySelector('[name="'+id+'"]');
+  if(t){e.preventDefault();t.scrollIntoView({behavior:'smooth',block:'start'});}
+});
+})();`;
+        (d.head||d.documentElement).appendChild(navScr);
+        if(hlQ){
           Editor._highlightInDom(d.body,hlQ);
-          // Inject style + auto-scroll script into the iframe
           const sty=d.createElement('style');
           sty.textContent='.srch-hl{background:rgba(255,210,0,.45)!important;border-radius:2px;padding:0 1px;box-shadow:0 0 0 1px rgba(200,150,0,.4)}.srch-hl.first-hl{background:rgba(255,155,0,.6)!important}';
           (d.head||d.documentElement).appendChild(sty);
           const scr=d.createElement('script');
           scr.textContent=`window.addEventListener('load',function(){var f=document.querySelector('.srch-hl');if(f)f.scrollIntoView({behavior:'smooth',block:'center'});});`;
           (d.head||d.documentElement).appendChild(scr);
-          src='<!DOCTYPE html>'+d.documentElement.outerHTML;
-        }catch(e){}
-      }
+        }
+        src='<!DOCTYPE html>'+d.documentElement.outerHTML;
+      }catch(e){}
       f.srcdoc=src;
       container.appendChild(f);
     } else {
