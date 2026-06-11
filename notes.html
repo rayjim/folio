@@ -361,7 +361,18 @@ button{font-family:var(--font-ui);cursor:pointer}
 
 <div id="main">
   <div id="sidebar">
-    <div id="sidebar-head"><button id="btn-new-page">＋ New Page</button></div>
+    <div id="sidebar-head" style="display:flex;gap:4px;align-items:center;padding:6px 8px">
+      <button id="btn-new-page" style="flex:1">＋ New Page</button>
+      <div style="position:relative;flex-shrink:0">
+        <button class="tb-btn" id="btn-sort" title="Sort pages" style="padding:3px 7px;font-size:12px">⇅</button>
+        <div id="sort-menu" class="export-menu hidden" style="right:0;min-width:150px">
+          <div class="export-item sort-opt" data-sort="manual">↕ Manual order</div>
+          <div class="export-item sort-opt" data-sort="modified">🕐 Last modified</div>
+          <div class="export-item sort-opt" data-sort="created">📅 Date created</div>
+          <div class="export-item sort-opt" data-sort="title">🔤 Title (A–Z)</div>
+        </div>
+      </div>
+    </div>
     <div id="page-tree"></div>
     <div id="drop-indicator"></div>
   </div>
@@ -689,6 +700,9 @@ const FileStore = {
           }
           // 'keep': fall through to overwrite
         }
+        // Set _ownMod to Infinity during write to block the poller from detecting
+        // our own save as an external change (race condition fix)
+        FilePoller._ownMod=Infinity;
         await window.electronAPI.writeJson(this._dataDir,'notebooks.json',State.notebooks);
         await window.electronAPI.writeJson(this._dataDir,'pages.json',State.pages);
         await window.electronAPI.writeJson(this._dataDir,'state.json',{
@@ -911,7 +925,7 @@ const FilePoller = {
 /* ============================================================ STATE */
 const State = {
   notebooks:[], pages:[], activeNotebookId:null, activePageId:null,
-  viewMode:'rendered', theme:'dark', fontSize:15,
+  viewMode:'rendered', theme:'dark', fontSize:15, sortMode:'manual',
 
   init(){
     this.notebooks = Storage.load(KEYS.notebooks)||[];
@@ -1276,18 +1290,23 @@ const Editor = {
 
   // Render content into a container — uses sandboxed iframe for full HTML documents,
   // DOMPurify+innerHTML for fragments and markdown.
+  _scrollCache: new Map(), // pageId → last known scrollY (populated via postMessage)
+
   _renderTo(container, content, type, hlQ=''){
     if(type==='html' && Utils.isFullDoc(content)){
       container.style.cssText='padding:0;overflow:hidden;display:flex;flex-direction:column;';
+      // Detect same-page reload so we can restore scroll position
+      const existingFrame=container.querySelector('iframe');
+      const samePageReload=existingFrame&&existingFrame.dataset.pageId===State.activePageId;
+      const restoreY=samePageReload?(this._scrollCache.get(State.activePageId)||0):0;
       container.innerHTML='';
       const f=document.createElement('iframe');
       f.style.cssText='flex:1;width:100%;border:none;min-height:0;display:block;';
       f.setAttribute('sandbox','allow-scripts allow-forms allow-popups allow-modals');
+      f.dataset.pageId=State.activePageId||'';
       let src=content;
       try{
         const d=new DOMParser().parseFromString(content,'text/html');
-        // Inject in-page anchor navigation (sandbox blocks window.location.hash changes,
-        // so we intercept hash-link clicks and use scrollIntoView instead)
         const navScr=d.createElement('script');
         navScr.textContent=`(function(){
 document.addEventListener('click',function(e){
@@ -1297,6 +1316,14 @@ document.addEventListener('click',function(e){
   if(!id)return;
   var t=document.getElementById(id)||document.querySelector('[name="'+id+'"]');
   if(t){e.preventDefault();t.scrollIntoView({behavior:'smooth',block:'start'});}
+});
+// Report scroll position to parent so it can be restored after iframe recreation
+window.addEventListener('scroll',function(){
+  window.parent.postMessage({_folio:'scroll',y:window.scrollY},'*');
+},{passive:true});
+// Respond to scroll-restore requests from parent
+window.addEventListener('message',function(e){
+  if(e.data&&e.data._folio==='scrollTo') window.scrollTo(0,e.data.y);
 });
 })();`;
         (d.head||d.documentElement).appendChild(navScr);
@@ -1312,6 +1339,9 @@ document.addEventListener('click',function(e){
         src='<!DOCTYPE html>'+d.documentElement.outerHTML;
       }catch(e){}
       f.srcdoc=src;
+      if(restoreY>0) f.addEventListener('load',()=>{
+        f.contentWindow?.postMessage({_folio:'scrollTo',y:restoreY},'*');
+      },{once:true});
       container.appendChild(f);
     } else {
       container.style.cssText='';
@@ -1332,9 +1362,14 @@ document.addEventListener('click',function(e){
     AttachUI.render(pg);
     this._refreshMeta(pg); this._refreshBadge(pg.contentType);
     document.getElementById('source-view').value=pg.content;
-    this._applyViewMode(State.viewMode,pg,hlQ);
+    this._applyViewMode(this._getPageMode(pg.id),pg,hlQ);
     this._dirty=false;
   },
+
+  _pageViewModes: new Map(), // per-page view mode: pageId → 'rendered'|'source'
+
+  _getPageMode(pgId){ return this._pageViewModes.get(pgId)||'rendered'; },
+  _setPageMode(pgId,mode){ this._pageViewModes.set(pgId,mode); },
 
   _applyViewMode(mode,pg,hlQ=''){
     if(!pg) pg=State.activePage();
@@ -1348,11 +1383,22 @@ document.addEventListener('click',function(e){
       btn.textContent='Rendered'; btn.classList.remove('active');
       if(pg){ this._renderTo(ren,pg.content,pg.contentType,hlQ); }
     }
-    State.viewMode=mode;
+    State.viewMode=mode; // keep global in sync for non-page contexts
   },
 
-  toggleViewMode(){ const n=State.viewMode==='rendered'?'source':'rendered'; this._applyViewMode(n); State.flush(); },
-  ensureSourceMode(){ if(State.viewMode!=='source'){this._applyViewMode('source');State.flush()} },
+  toggleViewMode(){
+    const pg=State.activePage(); if(!pg) return;
+    const n=this._getPageMode(pg.id)==='rendered'?'source':'rendered';
+    this._setPageMode(pg.id,n);
+    this._applyViewMode(n,pg);
+  },
+  ensureSourceMode(){
+    const pg=State.activePage(); if(!pg) return;
+    if(this._getPageMode(pg.id)!=='source'){
+      this._setPageMode(pg.id,'source');
+      this._applyViewMode('source',pg);
+    }
+  },
 
   _refreshMeta(pg){
     document.getElementById('page-meta').textContent=
@@ -1915,10 +1961,24 @@ const UI = {
       }));
   },
 
+  _sortPages(arr){
+    const m=State.sortMode;
+    if(m==='manual') return arr;
+    return [...arr].sort((a,b)=>{
+      if(m==='title') return a.title.localeCompare(b.title);
+      if(m==='modified') return new Date(b.modifiedAt)-new Date(a.modifiedAt);
+      if(m==='created') return new Date(b.createdAt)-new Date(a.createdAt);
+      return 0;
+    });
+  },
+
   renderSidebar(){
     const tree=document.getElementById('page-tree'); tree.innerHTML='';
+    // Update sort button appearance
+    const sortBtn=document.getElementById('btn-sort');
+    if(sortBtn) sortBtn.classList.toggle('active',State.sortMode!=='manual');
     if(!State.activeNotebookId){tree.innerHTML='<div class="empty-msg">No notebook selected.</div>';return;}
-    const roots=Pages.roots(State.activeNotebookId);
+    const roots=this._sortPages(Pages.roots(State.activeNotebookId));
     if(!roots.length){tree.innerHTML='<div class="empty-msg">No pages yet.<br>Click <strong>＋ New Page</strong> to start.</div>';return;}
     roots.forEach(pg=>tree.appendChild(this._node(pg,0)));
   },
@@ -1960,7 +2020,7 @@ const UI = {
 
     if(hasKids&&!pg.collapsed){
       const cw=document.createElement('div'); cw.className='tree-children';
-      kids.forEach(c=>cw.appendChild(this._node(c,depth+1))); wrap.appendChild(cw);
+      UI._sortPages(kids).forEach(c=>cw.appendChild(this._node(c,depth+1))); wrap.appendChild(cw);
     }
     return wrap;
   },
@@ -2751,6 +2811,30 @@ document.addEventListener('DOMContentLoaded',async()=>{
   document.getElementById('dlg-input').addEventListener('keydown',e=>{
     if(e.key==='Enter'){e.preventDefault();Dialog._ok();}
     if(e.key==='Escape'){e.preventDefault();Dialog._cancel();}
+  });
+
+  // Cache iframe scroll positions so they survive same-page re-renders (auto-save, poller reload)
+  window.addEventListener('message',e=>{
+    if(e.data&&e.data._folio==='scroll'&&State.activePageId){
+      Editor._scrollCache.set(State.activePageId,e.data.y);
+    }
+  });
+
+  // Sort menu
+  document.getElementById('btn-sort').addEventListener('click',e=>{
+    e.stopPropagation();
+    document.getElementById('sort-menu').classList.toggle('hidden');
+  });
+  document.querySelectorAll('.sort-opt').forEach(el=>{
+    el.addEventListener('click',()=>{
+      State.sortMode=el.dataset.sort;
+      document.getElementById('sort-menu').classList.add('hidden');
+      UI.renderSidebar();
+    });
+  });
+  document.addEventListener('click',e=>{
+    if(!e.target.closest('#btn-sort')&&!e.target.closest('#sort-menu'))
+      document.getElementById('sort-menu').classList.add('hidden');
   });
 });
 </script>
