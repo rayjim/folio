@@ -21,6 +21,8 @@ function createWindow() {
     minWidth: 640,
     minHeight: 480,
     title: 'Folio',
+    show: false,           // hide until ready-to-show to prevent white/black flash
+    backgroundColor: '#1a1a1a', // match dark-theme bg so flash is invisible
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -28,6 +30,7 @@ function createWindow() {
     },
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
   });
+  mainWindow.once('ready-to-show', () => mainWindow.show());
   mainWindow.loadFile('notes.html');
 }
 
