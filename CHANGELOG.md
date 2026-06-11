@@ -6,6 +6,20 @@ Versions follow `vYYYY.MM.DD` (date of release).
 
 ---
 
+## [v2026.06.11] — 2026-06-11
+
+### Added
+- **Page sort** — `⇅` button in the sidebar header sorts pages (and sub-pages at every depth) by: Manual order (default, preserves drag-and-drop), Last modified, Date created, or Title A–Z. Display-only; manual order is preserved.
+
+### Changed
+- **Per-page Rendered/Source toggle** — switching between Rendered and Source now affects only the current page. Other pages keep their own view mode independently.
+
+### Fixed
+- **Startup black flash** — Electron window is now hidden until content is fully loaded (`ready-to-show`), eliminating the black screen on launch.
+- **Auto-save scroll reset** — closing a race condition where the file poller detected our own save as an external change and reloaded the page (resetting scroll). Rendered iframes also report their scroll position to the parent via `postMessage` so it can be restored if the iframe is recreated.
+
+---
+
 ## [v2026.06.10d] — 2026-06-10
 
 ### Fixed
