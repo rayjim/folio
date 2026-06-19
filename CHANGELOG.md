@@ -6,6 +6,13 @@ Versions follow `vYYYY.MM.DD` (date of release).
 
 ---
 
+## [v2026.06.19] — 2026-06-19
+
+### Fixed
+- **Equation rendering in exports** — HTML and PDF exports now include the KaTeX CSS stylesheet, so math equations render correctly instead of appearing as unstyled markup. HTML-mode pages additionally have their `$...$` / `$$...$$` delimiters rendered to proper KaTeX HTML before export (previously they were exported as raw delimiter text).
+
+---
+
 ## [v2026.06.11] — 2026-06-11
 
 ### Added

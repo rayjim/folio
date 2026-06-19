@@ -959,7 +959,12 @@ const State = {
   <li>Switch light/dark theme with the 🌙 button in the top-right</li>
 </ul>
 
-<h2>What's New — v2026.06.11</h2>
+<h2>What's New — v2026.06.19</h2>
+<ul>
+  <li>🔢 <strong>Equations render correctly in exports</strong> — HTML and PDF exports now include KaTeX CSS so math equations display properly. HTML-mode pages also have their <code>$...$</code> / <code>$$...$$</code> delimiters rendered to proper equations before export (previously they were exported as raw text).</li>
+</ul>
+
+<h2>v2026.06.11</h2>
 <ul>
   <li>⇅ <strong>Page sort</strong> — click <strong>⇅</strong> in the sidebar to sort pages by last modified, created date, or title A–Z. Sub-pages at every level are sorted too.</li>
   <li>📄 <strong>Per-page Rendered/Source</strong> — toggling Rendered↔Source only affects the current page; other pages keep their own mode.</li>
@@ -1686,10 +1691,18 @@ const Export = {
 
   _buildHtml(pg){
     if(pg.contentType==='html' && Utils.isFullDoc(pg.content)) return pg.content;
-    const body=Editor.render(pg.content,pg.contentType);
+    let body=Editor.render(pg.content,pg.contentType);
+    // HTML pages: Editor.render() only sanitizes, doesn't process math — do it now
+    if(pg.contentType==='html'){
+      const tmp=document.createElement('div');
+      tmp.innerHTML=body;
+      Editor._mathRender(tmp);
+      body=tmp.innerHTML;
+    }
     return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>${Utils.escapeHtml(pg.title)}</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.css">
 <style>
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:860px;margin:48px auto;padding:0 28px;color:#1a1a1a;line-height:1.75;font-size:16px;background:#fff}
 h1{font-size:2em;margin:.67em 0 .5em;padding-bottom:.25em;border-bottom:2px solid #eee}
@@ -1712,6 +1725,7 @@ kbd{display:inline-block;font-family:monospace;font-size:.8em;padding:.1em .45em
 mark{background:#fff176;padding:.1em .2em;border-radius:2px}
 del{text-decoration:line-through;color:#888}
 .footer{margin-top:48px;padding-top:14px;border-top:1px solid #eee;font-size:11px;color:#999}
+.katex-display{overflow-x:auto;overflow-y:hidden;padding:.4em 0}.katex{font-size:1.1em}
 </style></head><body>
 <h1>${Utils.escapeHtml(pg.title)}</h1>
 ${body}
